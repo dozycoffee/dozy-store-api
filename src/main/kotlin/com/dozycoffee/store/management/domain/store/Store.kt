@@ -1,6 +1,7 @@
 package com.dozycoffee.store.management.domain.store
 
 import com.dozycoffee.store.core.StoreId
+import com.dozycoffee.store.management.domain.store.exception.InvalidStoreStatusTransitionException
 import com.dozycoffee.store.management.domain.store.exception.OpeningDateNotChangeableException
 import java.time.LocalDate
 
@@ -16,9 +17,9 @@ class Store private constructor(
     name: String,
     address: Address,
     phone: String,
-    val status: StoreStatus,
+    status: StoreStatus,
     openingDate: LocalDate,
-    val closingDate: LocalDate?,
+    closingDate: LocalDate?,
     val version: Long,
 ) {
     var name: String = name
@@ -28,6 +29,14 @@ class Store private constructor(
         private set
 
     var phone: String = phone
+        private set
+
+    /** 상태는 일반 정보 수정이 아니라 전용 전환([open], [suspend], [resume], [close])으로만 바뀐다. */
+    var status: StoreStatus = status
+        private set
+
+    /** 폐점한 매장만 값이 있다. */
+    var closingDate: LocalDate? = closingDate
         private set
 
     /** `PREPARING`이면 개점 예정일, 개점한 뒤에는 실제 개점일이다. */
@@ -61,6 +70,39 @@ class Store private constructor(
         this.address = address
         this.phone = phone
         this.openingDate = openingDate
+    }
+
+    /** 개점: `PREPARING → OPEN`. 개점일을 오늘로 바꾼다. */
+    fun open(today: LocalDate) {
+        requireTransition(StoreStatus.OPEN, StoreStatus.PREPARING)
+        status = StoreStatus.OPEN
+        openingDate = today
+    }
+
+    /** 휴업: `OPEN → SUSPENDED`. */
+    fun suspend() {
+        requireTransition(StoreStatus.SUSPENDED, StoreStatus.OPEN)
+        status = StoreStatus.SUSPENDED
+    }
+
+    /** 재개: `SUSPENDED → OPEN`. 개점일은 바뀌지 않는다. */
+    fun resume() {
+        requireTransition(StoreStatus.OPEN, StoreStatus.SUSPENDED)
+        status = StoreStatus.OPEN
+    }
+
+    /** 폐점: `PREPARING` / `OPEN` / `SUSPENDED` → `CLOSED`. 폐점일을 오늘로 기록한다. 폐점한 매장은 다시 열 수 없다. */
+    fun close(today: LocalDate) {
+        requireTransition(StoreStatus.CLOSED, StoreStatus.PREPARING, StoreStatus.OPEN, StoreStatus.SUSPENDED)
+        status = StoreStatus.CLOSED
+        closingDate = today
+    }
+
+    private fun requireTransition(
+        to: StoreStatus,
+        vararg allowedFrom: StoreStatus,
+    ) {
+        if (status !in allowedFrom) throw InvalidStoreStatusTransitionException(status, to)
     }
 
     companion object {

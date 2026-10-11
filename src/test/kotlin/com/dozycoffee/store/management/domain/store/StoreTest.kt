@@ -3,6 +3,7 @@ package com.dozycoffee.store.management.domain.store
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.fixture.address
 import com.dozycoffee.store.fixture.store
+import com.dozycoffee.store.management.domain.store.exception.InvalidStoreStatusTransitionException
 import com.dozycoffee.store.management.domain.store.exception.OpeningDateNotChangeableException
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -162,5 +163,155 @@ class StoreTest {
         }
 
         private fun closingDateFor(status: StoreStatus): LocalDate? = closingDate.takeIf { status == StoreStatus.CLOSED }
+    }
+
+    @Nested
+    @DisplayName("상태를 전환할 때")
+    inner class Transition {
+        private val today = LocalDate.of(2026, 12, 25)
+
+        private fun storeIn(status: StoreStatus) =
+            store(
+                status = status,
+                openingDate = openingDate,
+                closingDate = closingDate.takeIf { status == StoreStatus.CLOSED },
+            )
+
+        private fun assertUnchanged(
+            store: Store,
+            status: StoreStatus,
+        ) {
+            assertEquals(status, store.status)
+            assertEquals(openingDate, store.openingDate)
+            assertEquals(closingDate.takeIf { status == StoreStatus.CLOSED }, store.closingDate)
+        }
+
+        @Test
+        fun `개점하면 영업 중이 되고 개점일이 오늘로 바뀐다`() {
+            val store = storeIn(StoreStatus.PREPARING)
+
+            store.open(today)
+
+            assertEquals(StoreStatus.OPEN, store.status)
+            assertEquals(today, store.openingDate)
+            assertNull(store.closingDate)
+        }
+
+        @ParameterizedTest
+        @EnumSource(StoreStatus::class, names = ["PREPARING"], mode = EnumSource.Mode.EXCLUDE)
+        fun `개점 준비가 아니면 개점을 거부하고 상태는 그대로다`(status: StoreStatus) {
+            val store = storeIn(status)
+
+            assertFailsWith<InvalidStoreStatusTransitionException> { store.open(today) }
+
+            assertUnchanged(store, status)
+        }
+
+        @Test
+        fun `휴업하면 휴업 상태가 되고 개점일은 그대로다`() {
+            val store = storeIn(StoreStatus.OPEN)
+
+            store.suspend()
+
+            assertEquals(StoreStatus.SUSPENDED, store.status)
+            assertEquals(openingDate, store.openingDate)
+        }
+
+        @ParameterizedTest
+        @EnumSource(StoreStatus::class, names = ["OPEN"], mode = EnumSource.Mode.EXCLUDE)
+        fun `영업 중이 아니면 휴업을 거부하고 상태는 그대로다`(status: StoreStatus) {
+            val store = storeIn(status)
+
+            assertFailsWith<InvalidStoreStatusTransitionException> { store.suspend() }
+
+            assertUnchanged(store, status)
+        }
+
+        @Test
+        fun `재개하면 영업 중이 되고 개점일은 그대로다`() {
+            val store = storeIn(StoreStatus.SUSPENDED)
+
+            store.resume()
+
+            assertEquals(StoreStatus.OPEN, store.status)
+            assertEquals(openingDate, store.openingDate)
+        }
+
+        @ParameterizedTest
+        @EnumSource(StoreStatus::class, names = ["SUSPENDED"], mode = EnumSource.Mode.EXCLUDE)
+        fun `휴업이 아니면 재개를 거부하고 상태는 그대로다`(status: StoreStatus) {
+            val store = storeIn(status)
+
+            assertFailsWith<InvalidStoreStatusTransitionException> { store.resume() }
+
+            assertUnchanged(store, status)
+        }
+
+        @ParameterizedTest
+        @EnumSource(StoreStatus::class, names = ["PREPARING", "OPEN", "SUSPENDED"])
+        fun `폐점하지 않은 매장은 어느 상태에서든 폐점할 수 있고 폐점일이 오늘로 기록된다`(status: StoreStatus) {
+            val store = storeIn(status)
+
+            store.close(today)
+
+            assertEquals(StoreStatus.CLOSED, store.status)
+            assertEquals(today, store.closingDate)
+            assertEquals(openingDate, store.openingDate)
+        }
+
+        @Test
+        fun `이미 폐점한 매장의 폐점을 거부하고 폐점일은 그대로다`() {
+            val store = storeIn(StoreStatus.CLOSED)
+
+            assertFailsWith<InvalidStoreStatusTransitionException> { store.close(today) }
+
+            assertUnchanged(store, StoreStatus.CLOSED)
+        }
+
+        @Test
+        fun `전환 거부 예외는 현재 상태와 요청한 상태를 담는다`() {
+            val store = storeIn(StoreStatus.OPEN)
+
+            val exception = assertFailsWith<InvalidStoreStatusTransitionException> { store.open(today) }
+
+            assertEquals("허용되지 않는 매장 상태 전환입니다: OPEN → OPEN", exception.message)
+        }
+
+        @Test
+        fun `전환해도 이름, 주소, 전화번호, 코드, 버전은 바뀌지 않는다`() {
+            val store = store(status = StoreStatus.OPEN, version = 4)
+
+            store.suspend()
+
+            assertEquals("강남역점", store.name)
+            assertEquals(address(), store.address)
+            assertEquals("02-1234-5678", store.phone)
+            assertEquals(StoreCode.create(101), store.code)
+            assertEquals(4, store.version)
+        }
+
+        @Test
+        fun `개점 준비부터 폐점까지 허용된 순서로 이어서 전환할 수 있다`() {
+            val store = storeIn(StoreStatus.PREPARING)
+
+            store.open(today)
+            store.suspend()
+            store.resume()
+            store.close(today.plusDays(30))
+
+            assertEquals(StoreStatus.CLOSED, store.status)
+            assertEquals(today, store.openingDate)
+            assertEquals(today.plusDays(30), store.closingDate)
+        }
+
+        @Test
+        fun `폐점한 매장은 어떤 전환도 할 수 없다`() {
+            val store = storeIn(StoreStatus.CLOSED)
+
+            assertFailsWith<InvalidStoreStatusTransitionException> { store.open(today) }
+            assertFailsWith<InvalidStoreStatusTransitionException> { store.suspend() }
+            assertFailsWith<InvalidStoreStatusTransitionException> { store.resume() }
+            assertFailsWith<InvalidStoreStatusTransitionException> { store.close(today) }
+        }
     }
 }
