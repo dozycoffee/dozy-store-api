@@ -1,9 +1,11 @@
 package com.dozycoffee.store.management.application.service
 
+import com.dozycoffee.store.common.time.BusinessCalendar
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.core.VersionConflictException
 import com.dozycoffee.store.fixture.address
 import com.dozycoffee.store.management.adapter.outbound.persistence.StoresTable
+import com.dozycoffee.store.management.application.port.inbound.ChangeStoreStatusUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreUseCase
 import com.dozycoffee.store.management.application.port.inbound.RegisterStoreUseCase
 import com.dozycoffee.store.management.application.port.inbound.UpdateStoreUseCase
@@ -13,6 +15,7 @@ import com.dozycoffee.store.management.application.port.inbound.result.AddressRe
 import com.dozycoffee.store.management.application.port.inbound.result.StoreStatusResult
 import com.dozycoffee.store.management.domain.store.Address
 import com.dozycoffee.store.management.domain.store.StoreStatus
+import com.dozycoffee.store.management.domain.store.exception.InvalidStoreStatusTransitionException
 import com.dozycoffee.store.management.domain.store.exception.OpeningDateNotChangeableException
 import com.dozycoffee.store.management.domain.store.exception.StoreNameDuplicatedException
 import com.dozycoffee.store.management.domain.store.exception.StoreNotFoundException
@@ -44,6 +47,12 @@ class StoreServiceTest : ApplicationTest() {
 
     @Autowired
     private lateinit var updateStore: UpdateStoreUseCase
+
+    @Autowired
+    private lateinit var changeStatus: ChangeStoreStatusUseCase
+
+    @Autowired
+    private lateinit var calendar: BusinessCalendar
 
     private fun command(
         name: String = "강남역점",
@@ -357,6 +366,173 @@ class StoreServiceTest : ApplicationTest() {
             assertEquals(1, results.count { it.isSuccess })
             assertEquals(attempts - 1, results.count { it.exceptionOrNull() is VersionConflictException })
             assertEquals(1, call { getStore.get(StoreId(1)) }.version)
+        }
+    }
+
+    @Nested
+    @DisplayName("상태 전환 (S1 개점, S2 휴업·재개·폐점)")
+    inner class StatusChange {
+        private val openingDate = LocalDate.of(2026, 11, 1)
+
+        private fun storeIn(status: StoreStatus) =
+            execute(insertStoreSql("ST-00000001", "강남역점", status.name, closingDate = "2027-03-31".takeIf { status == StoreStatus.CLOSED }))
+
+        private fun stored() = call { getStore.get(StoreId(1)) }
+
+        private fun assertRejected(
+            status: StoreStatus,
+            action: suspend () -> Any,
+        ) {
+            storeIn(status)
+
+            val e = runCatching { call { action() } }.exceptionOrNull()
+
+            assertTrue(e is InvalidStoreStatusTransitionException, "InvalidStoreStatusTransitionException이어야 합니다: $e")
+            val after = stored()
+            assertEquals(status.name, after.status.name)
+            assertEquals(openingDate, after.openingDate)
+            assertEquals(0, after.version)
+        }
+
+        @Test
+        fun `개점하면 영업 중이 되고 개점일이 오늘로 바뀐다`() {
+            storeIn(StoreStatus.PREPARING)
+            val today = calendar.today()
+
+            val result = call { changeStatus.open(StoreId(1)) }
+
+            assertEquals(StoreStatusResult.OPEN, result.status)
+            assertEquals(today, result.openingDate)
+            assertNull(result.closingDate)
+            assertEquals(1, result.version)
+            assertEquals(result, stored())
+        }
+
+        @Test
+        fun `등록한 매장을 이어서 개점하면 매니저가 준비한 매장이 영업을 시작한다`() {
+            val registered = call { registerStore.register(command()) }
+
+            val opened = call { changeStatus.open(registered.storeId) }
+
+            assertEquals(registered.code, opened.code)
+            assertEquals(registered.name, opened.name)
+            assertEquals(StoreStatusResult.OPEN, opened.status)
+        }
+
+        @ParameterizedTest
+        @EnumSource(StoreStatus::class, names = ["PREPARING"], mode = EnumSource.Mode.EXCLUDE)
+        fun `개점 준비가 아니면 개점을 거부하고 저장된 값은 그대로다`(status: StoreStatus) = assertRejected(status) { changeStatus.open(StoreId(1)) }
+
+        @Test
+        fun `휴업하면 휴업 상태가 되고 개점일은 그대로다`() {
+            storeIn(StoreStatus.OPEN)
+
+            val result = call { changeStatus.suspend(StoreId(1)) }
+
+            assertEquals(StoreStatusResult.SUSPENDED, result.status)
+            assertEquals(openingDate, result.openingDate)
+            assertEquals(1, result.version)
+        }
+
+        @ParameterizedTest
+        @EnumSource(StoreStatus::class, names = ["OPEN"], mode = EnumSource.Mode.EXCLUDE)
+        fun `영업 중이 아니면 휴업을 거부하고 저장된 값은 그대로다`(status: StoreStatus) = assertRejected(status) { changeStatus.suspend(StoreId(1)) }
+
+        @Test
+        fun `재개하면 영업 중이 되고 개점일은 그대로다`() {
+            storeIn(StoreStatus.SUSPENDED)
+
+            val result = call { changeStatus.resume(StoreId(1)) }
+
+            assertEquals(StoreStatusResult.OPEN, result.status)
+            assertEquals(openingDate, result.openingDate)
+        }
+
+        @ParameterizedTest
+        @EnumSource(StoreStatus::class, names = ["SUSPENDED"], mode = EnumSource.Mode.EXCLUDE)
+        fun `휴업이 아니면 재개를 거부하고 저장된 값은 그대로다`(status: StoreStatus) = assertRejected(status) { changeStatus.resume(StoreId(1)) }
+
+        @ParameterizedTest
+        @EnumSource(StoreStatus::class, names = ["PREPARING", "OPEN", "SUSPENDED"])
+        fun `폐점하지 않은 매장은 어느 상태에서든 폐점할 수 있고 폐점일이 오늘로 기록된다`(status: StoreStatus) {
+            storeIn(status)
+            val today = calendar.today()
+
+            val result = call { changeStatus.close(StoreId(1)) }
+
+            assertEquals(StoreStatusResult.CLOSED, result.status)
+            assertEquals(today, result.closingDate)
+            assertEquals(openingDate, result.openingDate)
+            assertEquals(result, stored())
+        }
+
+        @Test
+        fun `폐점한 매장은 다시 열 수 없고 어떤 전환도 거부한다`() {
+            storeIn(StoreStatus.CLOSED)
+
+            listOf<suspend () -> Any>(
+                { changeStatus.open(StoreId(1)) },
+                { changeStatus.suspend(StoreId(1)) },
+                { changeStatus.resume(StoreId(1)) },
+                { changeStatus.close(StoreId(1)) },
+            ).forEach { action ->
+                val e = runCatching { call { action() } }.exceptionOrNull()
+                assertTrue(e is InvalidStoreStatusTransitionException, "InvalidStoreStatusTransitionException이어야 합니다: $e")
+            }
+            assertEquals(StoreStatusResult.CLOSED, stored().status)
+            assertEquals(LocalDate.of(2027, 3, 31), stored().closingDate)
+        }
+
+        @Test
+        fun `없는 매장은 찾을 수 없다`() {
+            val e = runCatching { call { changeStatus.open(StoreId(999)) } }.exceptionOrNull()
+
+            assertTrue(e is StoreNotFoundException, "StoreNotFoundException이어야 합니다: $e")
+        }
+
+        @Test
+        fun `폐점한 매장의 이름은 새 매장에 다시 쓸 수 있다`() {
+            val registered = call { registerStore.register(command(name = "강남역점")) }
+
+            call { changeStatus.close(registered.storeId) }
+            val reused = call { registerStore.register(command(name = "강남역점")) }
+
+            assertEquals("강남역점", reused.name)
+            assertEquals(StoreStatusResult.PREPARING, reused.status)
+        }
+
+        @Test
+        fun `상태가 바뀌면 그 전에 본 버전의 정보 수정은 충돌로 거부된다`() {
+            storeIn(StoreStatus.PREPARING)
+            val seenVersion = stored().version
+            call { changeStatus.open(StoreId(1)) }
+
+            val e =
+                runCatching {
+                    call {
+                        updateStore.update(UpdateStoreCommand(StoreId(1), seenVersion, "서초점", address(), "02-9999-0000", openingDate))
+                    }
+                }.exceptionOrNull()
+
+            assertTrue(e is VersionConflictException, "VersionConflictException이어야 합니다: $e")
+            assertEquals(1, e.currentVersion)
+            assertEquals("강남역점", stored().name)
+        }
+
+        @Test
+        fun `같은 매장의 개점이 동시에 와도 한 번만 전이된다`() {
+            storeIn(StoreStatus.PREPARING)
+            val attempts = 6
+
+            val results =
+                runBlocking {
+                    (1..attempts).map { async(Dispatchers.Default) { runCatching { changeStatus.open(StoreId(1)) } } }.awaitAll()
+                }
+
+            assertEquals(1, results.count { it.isSuccess })
+            assertEquals(attempts - 1, results.count { it.exceptionOrNull() is InvalidStoreStatusTransitionException })
+            assertEquals(1, stored().version)
+            assertEquals(StoreStatusResult.OPEN, stored().status)
         }
     }
 }
