@@ -4,6 +4,7 @@ import com.dozycoffee.store.common.exposed.isUniqueViolationOf
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.core.VersionConflictException
 import com.dozycoffee.store.fixture.address
+import com.dozycoffee.store.fixture.insertStoreSql
 import com.dozycoffee.store.fixture.newStore
 import com.dozycoffee.store.management.application.port.outbound.StoreRepository
 import com.dozycoffee.store.management.domain.store.Store
@@ -38,18 +39,6 @@ import kotlin.test.assertTrue
 class ExposedStoreRepositoryTest : ApplicationTest() {
     @Autowired
     private lateinit var repository: StoreRepository
-
-    /** 검증 대상이 아닌 행(폐점 매장 등)이나 제약 위반을 SQL로 직접 만든다. */
-    private fun insertStoreSql(
-        code: String,
-        name: String,
-        status: String,
-        closingDate: String? = null,
-    ) = """
-        INSERT INTO stores (code, name, road_address, postal_code, sido, sigungu, phone, status, opening_date, closing_date)
-        VALUES ('$code', '$name', '도로명', '06232', '서울특별시', '강남구', '02-1234-5678', '$status', '2026-11-01',
-                ${closingDate?.let { "'$it'" } ?: "NULL"})
-        """.trimIndent()
 
     /** `Store`는 엔티티라 값 동등성이 없다. 저장된 모든 값이 같은지 필드로 비교한다. */
     private fun assertSameStore(
