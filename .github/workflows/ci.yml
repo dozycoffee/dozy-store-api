@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# dozy-auth 라이브러리를 GitHub Packages에서 받는 데만 packages: read가 필요하다.
+permissions:
+  contents: read
+  packages: read
+
+# PR은 새 커밋이 오면 이전 실행을 취소한다. main은 실행 중인 것을 취소하지 않는다.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      # ktlint 검사, 단위·통합 테스트(Testcontainers는 러너의 Docker를 쓴다), Konsist 아키텍처 테스트.
+      # build.gradle.kts가 GITHUB_ACTOR(러너가 채움)와 GITHUB_TOKEN으로 GitHub Packages에 인증한다.
+      - run: ./gradlew build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 실패 원인(단언 메시지, 스택, 로그)을 나중에 확인할 수 있게 남긴다.
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: build/reports/
+          retention-days: 7
