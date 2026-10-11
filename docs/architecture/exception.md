@@ -29,10 +29,11 @@ enum class StoreErrorCode(override val type: ErrorType) : ErrorCode {
 
 ## 규칙
 
-- **domain은 HTTP를 모른다.** `ErrorCode`는 프레임워크와 무관한 `ErrorType`까지만 가진다. `ErrorType`을 HTTP 상태로 바꾸는 일은 `common.web.GlobalExceptionHandler`에서 `else` 없는 `when` 한 곳에서만 한다. 예외가 늘어도 핸들러 분기는 늘지 않고, `ErrorType`을 추가하면 매핑 누락이 컴파일 에러로 드러난다.
+- **domain은 HTTP를 모른다.** `ErrorCode`는 프레임워크와 무관한 `ErrorType`까지만 가진다. `ErrorType`을 HTTP 상태로 바꾸는 일은 `common.web`의 `ErrorType.toHttpStatus()`(`else` 없는 `when`) 한 곳에서만 하고 `GlobalExceptionHandler`가 이를 쓴다. 예외가 늘어도 핸들러 분기는 늘지 않고, `ErrorType`을 추가하면 매핑 누락이 컴파일 에러로 드러난다.
 - **예외 서브클래스를 둔다.** 타입 있는 생성자 파라미터(`StoreId` 등)로 메시지를 만들고, 테스트에서 `assertFailsWith<XxxException>`으로 구분하기 위해서다.
 - **응답 본문**은 RFC 9457 Problem Details다. `code`에 `ErrorCode.code`(enum 이름)를, `detail`에 예외 메시지를 담는다. `code`는 클라이언트 계약이므로 enum 이름을 바꿀 때 주의한다.
-- 새 `<Aggregate>ErrorCode` enum을 만들면 code 문자열 유일성 검사 테스트의 목록에도 추가한다.
+- 새 `<Aggregate>ErrorCode` enum을 만들면 code 문자열 유일성 검사 테스트(`ErrorCodeTest`)의 목록에도 추가한다.
+- **`traceId`** 는 인증 스타터가 401·403에 쓰는 규칙과 같게 정한다(`common.web.TraceIds`): 응답에 이미 있는 `X-Trace-Id`, 요청의 `X-Trace-Id`(`[A-Za-z0-9-]{1,64}`만 믿음), 없으면 새로 만든 값 순이다. 스타터의 구현(`DozyTraceIds`)이 `internal`이라 쓸 수 없어 같은 규칙으로 따로 둔다. Micrometer Tracing을 넣으면 스타터처럼 현재 span의 trace id를 가장 먼저 쓰도록 `TraceIds`도 고친다.
 
 ## DomainException과 require/check의 구분
 
@@ -60,6 +61,7 @@ enum class StoreErrorCode(override val type: ErrorType) : ErrorCode {
 | 공개 경로 요청 제한 초과 | `common.web`의 요청 제한 필터 | `429 TOO_MANY_REQUESTS`, `Retry-After` 헤더 |
 | 매니저로 지정되지 않은 매장 | `management`의 `CheckStoreAccessUseCase`가 `StoreNotFoundException`을 던진다 | `404 STORE_NOT_FOUND`. 없는 매장과 같은 응답이다 |
 | 토큰 없음·검증 실패, 역할 조건 불만족 | 인증 스타터 | `401 UNAUTHENTICATED`, `403 FORBIDDEN` (같은 Problem Details 형식) |
+| 컨트롤러 안에서 던져진 `AuthenticationException`·`AccessDeniedException` | `GlobalExceptionHandler`가 따로 받는다 | 같은 `401`·`403`. 포괄 핸들러(`Exception`)가 500으로 삼키지 않게 한다 |
 
 ## HTTP가 아닌 경로 (메시지 소비)
 

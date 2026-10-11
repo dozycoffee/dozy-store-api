@@ -87,6 +87,7 @@ dependencies {
     testImplementation(libs.dozy.auth.test)
     testImplementation(libs.kotlin.test.junit5)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.konsist)
     testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(kotlin("test"))
 
