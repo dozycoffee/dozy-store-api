@@ -1,5 +1,6 @@
 package com.dozycoffee.store.management.domain.store
 
+import com.dozycoffee.store.fixture.address
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -11,14 +12,6 @@ import kotlin.test.assertNull
 
 @DisplayName("Address")
 class AddressTest {
-    private fun address(
-        roadAddress: String = "서울특별시 강남구 강남대로 396",
-        detailAddress: String? = "1층",
-        postalCode: String = "06232",
-        sido: String = "서울특별시",
-        sigungu: String = "강남구",
-    ) = Address(roadAddress, detailAddress, postalCode, sido, sigungu)
-
     @Nested
     @DisplayName("만들 때")
     inner class Create {
