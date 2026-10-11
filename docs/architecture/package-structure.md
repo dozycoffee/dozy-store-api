@@ -78,7 +78,7 @@ UseCase는 동작마다 인터페이스 하나다. 구현은 `application/servic
 | 컨트롤러 | `adapter/inbound/web`, 요청·응답 DTO는 `request/`, `response/` | `StoreProductController` |
 | 메시지 컨슈머 | `adapter/inbound/messaging`, 메시지를 Command로 번역 | `CatalogProductEventConsumer` |
 | 외부 서비스 어댑터 | `adapter/outbound/{대상}` | `adapter/outbound/catalog/CatalogClient` |
-| 도메인 모델 | 생성은 검증하는 팩토리, 복원은 별도 팩토리 | `Store.register(...)`, `Store.reconstitute(...)` |
+| 도메인 모델 | 저장 전과 후를 타입으로 나눈다. 등록할 값은 검증하는 생성자(`NewStore`), 저장된 값의 복원은 별도 팩토리 | `NewStore(...)`, `Store.reconstitute(...)` |
 | 오류 | 애그리거트별 `XxxErrorCode`, 규칙별 예외 | `StoreErrorCode`, `StoreClosedException` |
 
 ## 유스케이스 작성 관례
