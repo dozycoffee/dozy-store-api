@@ -1,8 +1,10 @@
 package com.dozycoffee.store.management.application.service
 
+import com.dozycoffee.auth.core.PrincipalKey
 import com.dozycoffee.store.common.TransactionRunner
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.management.application.port.inbound.AssignStoreManagerUseCase
+import com.dozycoffee.store.management.application.port.inbound.GetStoreManagersByPrincipalUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreManagersUseCase
 import com.dozycoffee.store.management.application.port.inbound.UnassignStoreManagerUseCase
 import com.dozycoffee.store.management.application.port.inbound.command.AssignStoreManagerCommand
@@ -25,7 +27,8 @@ class StoreManagerService(
     private val transactions: TransactionRunner,
 ) : AssignStoreManagerUseCase,
     UnassignStoreManagerUseCase,
-    GetStoreManagersUseCase {
+    GetStoreManagersUseCase,
+    GetStoreManagersByPrincipalUseCase {
     override suspend fun assign(command: AssignStoreManagerCommand): StoreManagerResult =
         transactions.inTransaction {
             // 계정 종류 확인은 매장을 읽기 전에 한다. 요청 값 자체의 오류라 매장 상태와 무관하게 거부한다.
@@ -52,6 +55,9 @@ class StoreManagerService(
             requireStore(storeId)
             managers.findByStoreId(storeId).map(StoreManagerResult::from)
         }
+
+    override suspend fun getByPrincipal(principal: PrincipalKey): List<StoreManagerResult> =
+        transactions.inTransaction { managers.findByPrincipal(principal).map(StoreManagerResult::from) }
 
     private suspend fun requireStore(storeId: StoreId) {
         stores.findById(storeId) ?: throw StoreNotFoundException(storeId)

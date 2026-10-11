@@ -6,6 +6,7 @@ import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.fixture.insertStoreSql
 import com.dozycoffee.store.fixture.principalKey
 import com.dozycoffee.store.management.application.port.inbound.AssignStoreManagerUseCase
+import com.dozycoffee.store.management.application.port.inbound.GetStoreManagersByPrincipalUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreManagersUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreUseCase
 import com.dozycoffee.store.management.application.port.inbound.UnassignStoreManagerUseCase
@@ -48,6 +49,9 @@ class StoreManagerServiceTest : ApplicationTest() {
 
     @Autowired
     private lateinit var getManagers: GetStoreManagersUseCase
+
+    @Autowired
+    private lateinit var getManagersByPrincipal: GetStoreManagersByPrincipalUseCase
 
     @Autowired
     private lateinit var getStore: GetStoreUseCase
@@ -143,8 +147,7 @@ class StoreManagerServiceTest : ApplicationTest() {
             assign(open, account(1))
             assign(other, account(1))
 
-            assertEquals(listOf(account(1)), managersOf(open))
-            assertEquals(listOf(account(1)), managersOf(other))
+            assertEquals(2, call { getManagersByPrincipal.getByPrincipal(account(1)) }.size)
         }
     }
 
@@ -327,6 +330,23 @@ class StoreManagerServiceTest : ApplicationTest() {
         @Test
         fun `없는 매장의 매니저는 조회할 수 없다`() {
             assertRejected<StoreNotFoundException> { call { getManagers.getByStore(StoreId(999)) } }
+        }
+
+        @Test
+        fun `계정이 매니저인 지정을 폐점한 매장 포함해 지정한 순서로 돌려준다`() {
+            assign(open, account(1))
+            execute("INSERT INTO store_managers (store_id, principal_type, principal_id) VALUES (3, 'PARTNER', '${UUID(0, 1)}')")
+            assign(other, account(9))
+
+            val found = call { getManagersByPrincipal.getByPrincipal(account(1)) }
+
+            assertEquals(setOf(open, closed), found.map { it.storeId }.toSet())
+            assertEquals(2, found.size)
+        }
+
+        @Test
+        fun `지정이 없는 계정은 빈 목록이다`() {
+            assertTrue(call { getManagersByPrincipal.getByPrincipal(account(1)) }.isEmpty())
         }
     }
 }
