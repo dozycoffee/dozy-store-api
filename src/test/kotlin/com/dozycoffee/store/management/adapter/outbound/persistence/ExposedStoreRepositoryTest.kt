@@ -2,17 +2,24 @@ package com.dozycoffee.store.management.adapter.outbound.persistence
 
 import com.dozycoffee.store.common.exposed.isUniqueViolationOf
 import com.dozycoffee.store.core.StoreId
+import com.dozycoffee.store.core.VersionConflictException
 import com.dozycoffee.store.fixture.address
 import com.dozycoffee.store.fixture.newStore
 import com.dozycoffee.store.management.application.port.outbound.StoreRepository
+import com.dozycoffee.store.management.domain.store.Store
 import com.dozycoffee.store.management.domain.store.StoreCode
 import com.dozycoffee.store.management.domain.store.StoreStatus
 import com.dozycoffee.store.management.domain.store.exception.StoreNameDuplicatedException
 import com.dozycoffee.store.support.ApplicationTest
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.single
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
+import org.jetbrains.exposed.v1.r2dbc.selectAll
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -43,6 +50,23 @@ class ExposedStoreRepositoryTest : ApplicationTest() {
         VALUES ('$code', '$name', '도로명', '06232', '서울특별시', '강남구', '02-1234-5678', '$status', '2026-11-01',
                 ${closingDate?.let { "'$it'" } ?: "NULL"})
         """.trimIndent()
+
+    /** `Store`는 엔티티라 값 동등성이 없다. 저장된 모든 값이 같은지 필드로 비교한다. */
+    private fun assertSameStore(
+        expected: Store,
+        actual: Store?,
+    ) {
+        assertNotNull(actual)
+        assertEquals(expected.id, actual.id)
+        assertEquals(expected.code, actual.code)
+        assertEquals(expected.name, actual.name)
+        assertEquals(expected.address, actual.address)
+        assertEquals(expected.phone, actual.phone)
+        assertEquals(expected.status, actual.status)
+        assertEquals(expected.openingDate, actual.openingDate)
+        assertEquals(expected.closingDate, actual.closingDate)
+        assertEquals(expected.version, actual.version)
+    }
 
     @Nested
     @DisplayName("등록하고 조회할 때")
@@ -221,6 +245,203 @@ class ExposedStoreRepositoryTest : ApplicationTest() {
         @Test
         fun `폐점하지 않은 매장에 폐점일이 있으면 저장할 수 없다`() {
             assertFailsWith<Exception> { execute(insertStoreSql("ST-00000001", "강남역점", "OPEN", closingDate = "2027-03-31")) }
+        }
+    }
+
+    @Nested
+    @DisplayName("잠그고 조회할 때")
+    inner class FindForUpdate {
+        @Test
+        fun `매장을 조회하고 없으면 null을 돌려준다`() {
+            val saved = tx { repository.insert(newStore()) }
+
+            assertSameStore(saved, tx { repository.findByIdForUpdate(saved.id) })
+            assertNull(tx { repository.findByIdForUpdate(StoreId(999)) })
+        }
+
+        @Test
+        fun `행을 잠근 트랜잭션이 끝날 때까지 다른 트랜잭션의 잠금 조회는 기다린다`() {
+            val saved = tx { repository.insert(newStore()) }
+
+            runBlocking {
+                val locked = CompletableDeferred<Unit>()
+                val release = CompletableDeferred<Unit>()
+                val holder =
+                    async(Dispatchers.Default) {
+                        transactionRunner.inTransaction {
+                            repository.findByIdForUpdate(saved.id)
+                            locked.complete(Unit)
+                            release.await()
+                        }
+                    }
+                locked.await()
+                val waiter = async(Dispatchers.Default) { transactionRunner.inTransaction { repository.findByIdForUpdate(saved.id) } }
+
+                assertNull(withTimeoutOrNull(500) { waiter.await() }, "잠금이 풀리기 전에는 조회가 끝나면 안 됩니다")
+
+                release.complete(Unit)
+                holder.await()
+                assertNotNull(withTimeout(5_000) { waiter.await() })
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("저장할 때")
+    inner class Save {
+        private fun registered() = tx { repository.insert(newStore(code = StoreCode.create(1), name = "강남역점")) }
+
+        @Test
+        fun `바뀐 정보를 저장하고 버전을 1 올려 돌려준다`() {
+            val store = registered()
+            store.update("서초점", address(detailAddress = null, sigungu = "서초구"), "02-9999-0000", LocalDate.of(2026, 12, 1))
+
+            val saved = tx { repository.save(store) }
+
+            assertEquals(1, saved.version)
+            assertSameStore(saved, tx { repository.findById(store.id) })
+            assertEquals("서초점", saved.name)
+            assertEquals("서초구", saved.address.sigungu)
+            assertNull(saved.address.detailAddress)
+            assertEquals("02-9999-0000", saved.phone)
+            assertEquals(LocalDate.of(2026, 12, 1), saved.openingDate)
+            assertEquals(store.code, saved.code)
+        }
+
+        @Test
+        fun `저장할 때마다 버전이 1씩 오른다`() {
+            var store = registered()
+
+            repeat(3) { store = tx { repository.save(store) } }
+
+            assertEquals(3, store.version)
+        }
+
+        @Test
+        fun `개점하면 상태와 개점일이 저장된다`() {
+            val store = registered()
+            store.open(LocalDate.of(2026, 12, 25))
+
+            val saved = tx { repository.save(store) }
+
+            assertEquals(StoreStatus.OPEN, saved.status)
+            assertEquals(LocalDate.of(2026, 12, 25), saved.openingDate)
+            assertNull(saved.closingDate)
+        }
+
+        @Test
+        fun `폐점하면 상태와 폐점일이 저장된다`() {
+            val store = registered()
+            store.close(LocalDate.of(2027, 3, 31))
+
+            val saved = tx { repository.save(store) }
+
+            assertEquals(StoreStatus.CLOSED, saved.status)
+            assertEquals(LocalDate.of(2027, 3, 31), saved.closingDate)
+        }
+
+        @Test
+        fun `저장하면 수정 시각이 DB 시계로 갱신된다`() {
+            val store = registered()
+            val before = tx { StoresTable.selectAll().single()[StoresTable.updatedAt] }
+
+            tx { repository.save(store) }
+
+            val after = tx { StoresTable.selectAll().single()[StoresTable.updatedAt] }
+            assertTrue(after.isAfter(before), "수정 시각이 갱신되지 않았습니다: $before → $after")
+        }
+
+        @Test
+        fun `그 사이 다른 변경이 반영됐으면 거부하고 현재 버전을 알려 준다`() {
+            val first = registered()
+            val second = checkNotNull(tx { repository.findById(first.id) })
+            first.update("서초점", address(), "02-1111-1111", LocalDate.of(2026, 11, 1))
+            tx { repository.save(first) }
+            second.update("역삼점", address(), "02-2222-2222", LocalDate.of(2026, 11, 1))
+
+            val e = assertFailsWith<VersionConflictException> { tx { repository.save(second) } }
+
+            assertEquals(1, e.currentVersion)
+            val stored = checkNotNull(tx { repository.findById(first.id) })
+            assertEquals("서초점", stored.name)
+            assertEquals("02-1111-1111", stored.phone)
+            assertEquals(1, stored.version)
+        }
+
+        @Test
+        fun `같은 버전을 동시에 저장하면 하나만 성공한다`() {
+            val saved = registered()
+            val attempts = 6
+            val stores =
+                (1..attempts).map { n ->
+                    checkNotNull(tx { repository.findById(saved.id) }).also {
+                        it.update("지점$n", address(), "02-0000-000$n", LocalDate.of(2026, 11, 1))
+                    }
+                }
+
+            val results =
+                runBlocking {
+                    stores
+                        .map { store ->
+                            async(Dispatchers.Default) { runCatching { transactionRunner.inTransaction { repository.save(store) } } }
+                        }.awaitAll()
+                }
+
+            assertEquals(1, results.count { it.isSuccess })
+            assertEquals(attempts - 1, results.count { it.exceptionOrNull() is VersionConflictException })
+            assertEquals(1, checkNotNull(tx { repository.findById(saved.id) }).version)
+        }
+
+        @Test
+        fun `폐점하지 않은 다른 매장의 이름으로 바꾸면 거부하고 저장하지 않는다`() {
+            tx { repository.insert(newStore(code = StoreCode.create(1), name = "강남역점")) }
+            val other = tx { repository.insert(newStore(code = StoreCode.create(2), name = "역삼점")) }
+            other.update("강남역점", address(), "02-1234-5678", LocalDate.of(2026, 11, 1))
+
+            assertFailsWith<StoreNameDuplicatedException> { tx { repository.save(other) } }
+
+            val stored = checkNotNull(tx { repository.findById(other.id) })
+            assertEquals("역삼점", stored.name)
+            assertEquals(0, stored.version)
+        }
+
+        @Test
+        fun `이름을 그대로 두고 다른 정보만 바꾸는 것은 자기 자신과 겹치지 않는다`() {
+            val store = registered()
+            store.update("강남역점", address(), "02-9999-0000", LocalDate.of(2026, 11, 1))
+
+            val saved = tx { repository.save(store) }
+
+            assertEquals("강남역점", saved.name)
+            assertEquals("02-9999-0000", saved.phone)
+        }
+
+        @Test
+        fun `폐점한 매장의 이름으로는 바꿀 수 있다`() {
+            execute(insertStoreSql("ST-00000009", "옛점", "CLOSED", closingDate = "2027-03-31"))
+            val store = registered()
+            store.update("옛점", address(), "02-1234-5678", LocalDate.of(2026, 11, 1))
+
+            assertEquals("옛점", tx { repository.save(store) }.name)
+        }
+    }
+
+    @Nested
+    @DisplayName("같은 이름을 확인할 때 자기 자신을 제외하면")
+    inner class ExistsActiveByNameExcluding {
+        @Test
+        fun `그 매장뿐이면 false다`() {
+            val store = tx { repository.insert(newStore(name = "강남역점")) }
+
+            assertFalse(tx { repository.existsActiveByName("강남역점", excluding = store.id) })
+        }
+
+        @Test
+        fun `다른 매장이 같은 이름이면 true다`() {
+            tx { repository.insert(newStore(code = StoreCode.create(1), name = "강남역점")) }
+            val other = tx { repository.insert(newStore(code = StoreCode.create(2), name = "역삼점")) }
+
+            assertTrue(tx { repository.existsActiveByName("강남역점", excluding = other.id) })
         }
     }
 }

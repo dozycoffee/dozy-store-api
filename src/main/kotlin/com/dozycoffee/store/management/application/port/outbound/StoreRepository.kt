@@ -14,6 +14,22 @@ interface StoreRepository {
 
     suspend fun findById(id: StoreId): Store?
 
-    /** 폐점하지 않은 매장 중에 같은 이름이 있는지. */
-    suspend fun existsActiveByName(name: String): Boolean
+    /** 행을 잠그고(`SELECT … FOR UPDATE`) 조회한다. 상태 전환처럼 읽고 바꾸는 사이에 다른 변경이 끼면 안 될 때 쓴다. */
+    suspend fun findByIdForUpdate(id: StoreId): Store?
+
+    /**
+     * 바뀐 매장을 저장하고, 버전이 1 오른 [Store]를 돌려준다. 낙관적 잠금이라 [Store.version]이 저장소의 버전과 같아야 한다.
+     * 그 사이 다른 변경이 반영됐으면 [com.dozycoffee.store.core.VersionConflictException]으로 거부한다.
+     * 이름을 바꿔 폐점하지 않은 다른 매장과 겹치면 [com.dozycoffee.store.management.domain.store.exception.StoreNameDuplicatedException]으로 거부한다.
+     */
+    suspend fun save(store: Store): Store
+
+    /**
+     * 폐점하지 않은 매장 중에 같은 이름이 있는지. [excluding]을 주면 그 매장은 빼고 본다
+     * (이름을 그대로 두고 다른 정보만 고치는 수정이 자기 자신 때문에 중복으로 보이지 않게).
+     */
+    suspend fun existsActiveByName(
+        name: String,
+        excluding: StoreId? = null,
+    ): Boolean
 }
