@@ -2,7 +2,11 @@ package com.dozycoffee.store.common.exposed
 
 import com.dozycoffee.store.common.TransactionRunner
 import io.r2dbc.spi.ConnectionFactory
+import kotlinx.coroutines.runBlocking
+import org.jetbrains.exposed.v1.core.vendors.PostgreSQLDialect
 import org.jetbrains.exposed.v1.r2dbc.R2dbcDatabase
+import org.jetbrains.exposed.v1.r2dbc.R2dbcDatabaseConfig
+import org.jetbrains.exposed.v1.r2dbc.transactions.suspendTransaction
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -22,15 +26,27 @@ class ExposedConfig {
             .connect(
                 connectionFactory,
                 databaseConfig =
-                    org.jetbrains.exposed.v1.r2dbc.R2dbcDatabaseConfig
-                        .Builder()
-                        .apply { defaultMaxAttempts = 1 },
-            ).also { database ->
+                    R2dbcDatabaseConfig.Builder().apply {
+                        // 풀이 감싼 ConnectionFactory에서는 드라이버를 알 수 없으므로 방언을 직접 지정한다. Store는 PostgreSQL만 쓴다.
+                        explicitDialect = PostgreSQLDialect()
+                        defaultMaxAttempts = 1
+                    },
+            ).also(::preloadMetadata)
+
+    /** 메타데이터 조회도 트랜잭션 안에서 해야 하므로 시작할 때 트랜잭션을 하나 열어 lazy 값을 모두 읽어 둔다. */
+    private fun preloadMetadata(database: R2dbcDatabase) {
+        runBlocking {
+            suspendTransaction(database) {
                 database.vendor
-                database.version
                 database.dialect
                 database.dialectMetadata
+                database.dialectMode
+                database.version
+                database.fullVersion
+                database.identifierManager
             }
+        }
+    }
 
     @Bean
     fun transactionRunner(database: R2dbcDatabase): TransactionRunner = ExposedTransactionRunner(database)

@@ -1,14 +1,9 @@
 package com.dozycoffee.store
 
-import org.junit.jupiter.api.Tag
+import com.dozycoffee.store.support.IntegrationTest
 import org.junit.jupiter.api.Test
-import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.context.annotation.Import
 
-@Tag("integration")
-@Import(TestcontainersConfiguration::class)
-@SpringBootTest
-class DozyStoreApiApplicationTests {
+class DozyStoreApiApplicationTests : IntegrationTest() {
     @Test
     fun contextLoads() {
     }
