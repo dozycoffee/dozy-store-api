@@ -41,7 +41,12 @@ Store는 Catalog의 표시용 상품 정보를 조회한다([ADR-0002](../adr/00
 [기술 스택의 인증 설정](tech-stack.md#인증-설정)을 따른다.
 
 - Store는 realm `internal`(본사 직원, Catalog 서비스 계정)과 `partner`(점주)를 받는다.
-- 역할 검사(`store:admin`, `store:viewer`, `store:catalog_agent`)는 Spring Security의 경로 인가로 하고, **매니저 검사(principal key와 매니저 지정 비교)는 `management`의 `CheckStoreAccessUseCase`가** 한다. 다른 모듈의 유스케이스는 이 UseCase를 같은 트랜잭션 안에서 부른다(ADR-0005). 매니저 지정은 DB를 봐야 해서 경로 인가만으로는 판단할 수 없다.
+- **역할과 계정 종류는 컨트롤러 메서드의 `@PreAuthorize`로 검사한다.** 스타터의 기본 필터 체인(토큰 검증, `public-paths` 밖의 모든 요청은 인증 필요)을 그대로 쓰고 경로별 인가 규칙은 따로 두지 않는다. 엔드포인트마다 인가 조건이 컨트롤러에 보이고, 필터 체인을 직접 교체하지 않아도 되기 때문이다. WebFlux에서는 `suspend` 함수에 붙인다.
+   * 여러 realm을 받는 서비스는 모든 API에 계정 종류(type) 조건을 붙인다(스타터의 안내).
+   * 역할은 접두사를 뗀 코드로 판단한다. 스타터가 `store:` 역할만 남기고 접두사를 떼므로 `store:admin`은 `hasRole('admin')`이다. 코드는 `StoreRoles` 상수를 쓴다.
+   * 계정 종류 조건은 `authentication.principal.key.type.name() == 'EMPLOYEE'`처럼 쓴다. `@dozyAuth.isType(...)`는 단독으로는 동작하지만, WebFlux에서는 `Mono<Boolean>`이라 `and`로 다른 조건과 묶으면 평가에 실패해 500이 난다.
+   * 이 표현은 문자열 상수로 한 곳(`StoreAuthorization`)에 모아 컨트롤러가 가져다 쓴다.
+- **매니저 검사(principal key와 매니저 지정 비교)는 `management`의 `CheckStoreAccessUseCase`가** 한다. 다른 모듈의 유스케이스는 이 UseCase를 같은 트랜잭션 안에서 부른다(ADR-0005). 매니저 지정은 DB를 봐야 해서 `@PreAuthorize`만으로는 판단할 수 없다.
 - Store의 서비스 계정 id·secret은 Auth 관리자가 발급하고, 배포 설정의 비밀값으로 넣는다. secret은 저장소에 두지 않는다. 교체하면 배포 설정을 바꾸고 서비스를 다시 띄운다.
 
 ## 공개 경로
