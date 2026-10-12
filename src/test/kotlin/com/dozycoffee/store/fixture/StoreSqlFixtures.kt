@@ -6,9 +6,11 @@ fun insertStoreSql(
     name: String = "강남역점",
     status: String = "PREPARING",
     closingDate: String? = null,
+    sido: String = "서울특별시",
+    sigungu: String = "강남구",
 ) = """
     INSERT INTO stores (code, name, road_address, postal_code, sido, sigungu, phone, status, opening_date, closing_date)
-    VALUES ('$code', '$name', '도로명', '06232', '서울특별시', '강남구', '02-1234-5678', '$status', '2026-11-01',
+    VALUES ('$code', '$name', '도로명', '06232', '$sido', '$sigungu', '02-1234-5678', '$status', '2026-11-01',
             ${closingDate?.let { "'$it'" } ?: "NULL"})
     """.trimIndent()
 

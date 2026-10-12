@@ -1,12 +1,14 @@
 package com.dozycoffee.store.management.adapter.outbound.persistence
 
 import com.dozycoffee.store.common.exposed.isUniqueViolationOf
+import com.dozycoffee.store.common.paging.PageRequest
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.core.VersionConflictException
 import com.dozycoffee.store.fixture.address
 import com.dozycoffee.store.fixture.insertStoreSql
 import com.dozycoffee.store.fixture.newStore
 import com.dozycoffee.store.management.application.port.outbound.StoreRepository
+import com.dozycoffee.store.management.application.port.outbound.StoreSearchCriteria
 import com.dozycoffee.store.management.domain.store.Store
 import com.dozycoffee.store.management.domain.store.StoreCode
 import com.dozycoffee.store.management.domain.store.StoreStatus
@@ -493,6 +495,195 @@ class ExposedStoreRepositoryTest : ApplicationTest() {
             assertEquals(StoreCode("ST-00000001"), store.code)
             assertEquals(StoreStatus.CLOSED, store.status)
             assertEquals(LocalDate.of(2027, 3, 31), store.closingDate)
+        }
+    }
+
+    @Nested
+    @DisplayName("조건으로 검색할 때")
+    inner class Search {
+        /** 1 강남역점(서울·강남, 영업), 2 역삼점(서울·강남, 준비), 3 서초점(서울·서초, 휴업), 4 해운대점(부산·해운대, 영업), 5 옛점(서울·강남, 폐점) */
+        private fun seed() {
+            execute(insertStoreSql("ST-00000001", "강남역점", "OPEN", sido = "서울특별시", sigungu = "강남구"))
+            execute(insertStoreSql("ST-00000002", "역삼점", "PREPARING", sido = "서울특별시", sigungu = "강남구"))
+            execute(insertStoreSql("ST-00000003", "서초점", "SUSPENDED", sido = "서울특별시", sigungu = "서초구"))
+            execute(insertStoreSql("ST-00000004", "해운대점", "OPEN", sido = "부산광역시", sigungu = "해운대구"))
+            execute(insertStoreSql("ST-00000005", "옛점", "CLOSED", closingDate = "2027-03-31", sido = "서울특별시", sigungu = "강남구"))
+        }
+
+        private fun search(criteria: StoreSearchCriteria = StoreSearchCriteria()) = tx { repository.search(criteria) }
+
+        private fun names(criteria: StoreSearchCriteria = StoreSearchCriteria()) = search(criteria).content.map { it.name }
+
+        @Test
+        fun `조건이 없으면 폐점을 뺀 모든 매장을 이름순으로 돌려준다`() {
+            seed()
+
+            val page = search()
+
+            assertEquals(listOf("강남역점", "서초점", "역삼점", "해운대점"), page.content.map { it.name })
+            assertEquals(4, page.totalElements)
+            assertEquals(1, page.totalPages)
+        }
+
+        @Test
+        fun `상태를 지정하면 그 상태의 매장만 나온다`() {
+            seed()
+
+            assertEquals(listOf("강남역점", "해운대점"), names(StoreSearchCriteria(statuses = setOf(StoreStatus.OPEN))))
+            assertEquals(
+                listOf("서초점", "역삼점"),
+                names(StoreSearchCriteria(statuses = setOf(StoreStatus.PREPARING, StoreStatus.SUSPENDED))),
+            )
+        }
+
+        @Test
+        fun `상태로 폐점을 지정해야 폐점한 매장이 나온다`() {
+            seed()
+
+            assertEquals(listOf("옛점"), names(StoreSearchCriteria(statuses = setOf(StoreStatus.CLOSED))))
+            assertEquals(
+                listOf("강남역점", "옛점", "해운대점"),
+                names(StoreSearchCriteria(statuses = setOf(StoreStatus.CLOSED, StoreStatus.OPEN))),
+            )
+        }
+
+        @Test
+        fun `시·도와 시·군·구로 거른다`() {
+            seed()
+
+            assertEquals(listOf("강남역점", "서초점", "역삼점"), names(StoreSearchCriteria(sido = "서울특별시")))
+            assertEquals(listOf("강남역점", "역삼점"), names(StoreSearchCriteria(sido = "서울특별시", sigungu = "강남구")))
+            assertEquals(listOf("해운대점"), names(StoreSearchCriteria(sido = "부산광역시")))
+        }
+
+        @Test
+        fun `시·군·구만 지정해도 거른다`() {
+            seed()
+
+            assertEquals(listOf("서초점"), names(StoreSearchCriteria(sigungu = "서초구")))
+        }
+
+        @Test
+        fun `매장명은 부분 일치로 찾는다`() {
+            seed()
+
+            assertEquals(listOf("강남역점", "역삼점"), names(StoreSearchCriteria(nameContains = "역")))
+            assertEquals(listOf("해운대점"), names(StoreSearchCriteria(nameContains = "해운")))
+            assertTrue(names(StoreSearchCriteria(nameContains = "없는이름")).isEmpty())
+        }
+
+        @Test
+        fun `매장명 검색은 대소문자를 무시한다`() {
+            execute(insertStoreSql("ST-00000001", "Dozy Gangnam"))
+            execute(insertStoreSql("ST-00000002", "dozy Seocho"))
+            execute(insertStoreSql("ST-00000003", "Other"))
+
+            assertEquals(listOf("Dozy Gangnam", "dozy Seocho"), names(StoreSearchCriteria(nameContains = "DOZY")))
+            assertEquals(listOf("Dozy Gangnam", "dozy Seocho"), names(StoreSearchCriteria(nameContains = "dozy")))
+        }
+
+        @Test
+        fun `매장명의 퍼센트와 밑줄과 역슬래시는 글자 그대로 찾는다`() {
+            execute(insertStoreSql("ST-00000001", "100%점"))
+            execute(insertStoreSql("ST-00000002", "100점"))
+            execute(insertStoreSql("ST-00000003", "a_b점"))
+            execute(insertStoreSql("ST-00000004", "axb점"))
+            execute(insertStoreSql("ST-00000005", "역\\삼점"))
+            execute(insertStoreSql("ST-00000006", "역삼점"))
+
+            assertEquals(listOf("100%점"), names(StoreSearchCriteria(nameContains = "%")))
+            assertEquals(listOf("a_b점"), names(StoreSearchCriteria(nameContains = "_")))
+            assertEquals(listOf("역\\삼점"), names(StoreSearchCriteria(nameContains = "\\")))
+        }
+
+        @Test
+        fun `ID로 거르고 없는 ID는 빠진다`() {
+            seed()
+
+            assertEquals(
+                listOf("강남역점", "해운대점"),
+                names(StoreSearchCriteria(ids = setOf(StoreId(1), StoreId(4), StoreId(999)))),
+            )
+        }
+
+        @Test
+        fun `조건은 모두 만족해야 한다`() {
+            seed()
+
+            val criteria =
+                StoreSearchCriteria(
+                    ids = setOf(StoreId(1), StoreId(2), StoreId(4)),
+                    statuses = setOf(StoreStatus.OPEN),
+                    sido = "서울특별시",
+                    nameContains = "역",
+                )
+
+            assertEquals(listOf("강남역점"), names(criteria))
+        }
+
+        @Test
+        fun `같은 이름이면 ID순이다 (폐점한 매장은 이름이 같을 수 있다)`() {
+            execute(insertStoreSql("ST-00000001", "같은점", "CLOSED", closingDate = "2027-01-01"))
+            execute(insertStoreSql("ST-00000002", "같은점", "CLOSED", closingDate = "2027-02-01"))
+            execute(insertStoreSql("ST-00000003", "같은점", "CLOSED", closingDate = "2027-03-01"))
+
+            val ids = search(StoreSearchCriteria(statuses = setOf(StoreStatus.CLOSED))).content.map { it.id.value }
+
+            assertEquals(listOf(1L, 2L, 3L), ids)
+        }
+
+        @Test
+        fun `조건에 맞는 매장이 없으면 빈 페이지다`() {
+            seed()
+
+            val page = search(StoreSearchCriteria(sido = "제주특별자치도"))
+
+            assertTrue(page.content.isEmpty())
+            assertEquals(0, page.totalElements)
+            assertEquals(0, page.totalPages)
+        }
+
+        @Test
+        fun `나눠서 조회하고 전체 건수와 전체 페이지 수를 알려 준다`() {
+            (1..25).forEach { n -> execute(insertStoreSql("ST-%08d".format(n), "지점%02d".format(n))) }
+
+            val first = search(StoreSearchCriteria(page = PageRequest(page = 0, size = 10)))
+            val second = search(StoreSearchCriteria(page = PageRequest(page = 1, size = 10)))
+            val last = search(StoreSearchCriteria(page = PageRequest(page = 2, size = 10)))
+
+            assertEquals((1..10).map { "지점%02d".format(it) }, first.content.map { it.name })
+            assertEquals((11..20).map { "지점%02d".format(it) }, second.content.map { it.name })
+            assertEquals((21..25).map { "지점%02d".format(it) }, last.content.map { it.name })
+            listOf(first, second, last).forEach {
+                assertEquals(25, it.totalElements)
+                assertEquals(3, it.totalPages)
+                assertEquals(10, it.size)
+            }
+            assertEquals(2, last.page)
+        }
+
+        @Test
+        fun `범위를 벗어난 페이지는 빈 목록이고 전체 건수는 그대로다`() {
+            (1..5).forEach { n -> execute(insertStoreSql("ST-%08d".format(n), "지점%02d".format(n))) }
+
+            val page = search(StoreSearchCriteria(page = PageRequest(page = 9, size = 10)))
+
+            assertTrue(page.content.isEmpty())
+            assertEquals(5, page.totalElements)
+            assertEquals(1, page.totalPages)
+        }
+
+        @Test
+        fun `저장된 값을 그대로 돌려준다`() {
+            execute(insertStoreSql("ST-00000001", "강남역점", "OPEN", sido = "서울특별시", sigungu = "강남구"))
+
+            val store = search().content.single()
+
+            assertEquals(StoreId(1), store.id)
+            assertEquals(StoreCode("ST-00000001"), store.code)
+            assertEquals(StoreStatus.OPEN, store.status)
+            assertEquals("강남구", store.address.sigungu)
+            assertEquals(0, store.version)
         }
     }
 }

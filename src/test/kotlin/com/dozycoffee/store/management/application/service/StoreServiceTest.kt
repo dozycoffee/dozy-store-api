@@ -1,5 +1,6 @@
 package com.dozycoffee.store.management.application.service
 
+import com.dozycoffee.store.common.paging.PageRequest
 import com.dozycoffee.store.common.time.BusinessCalendar
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.core.VersionConflictException
@@ -9,8 +10,10 @@ import com.dozycoffee.store.management.adapter.outbound.persistence.StoresTable
 import com.dozycoffee.store.management.application.port.inbound.ChangeStoreStatusUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreUseCase
 import com.dozycoffee.store.management.application.port.inbound.RegisterStoreUseCase
+import com.dozycoffee.store.management.application.port.inbound.SearchStoresUseCase
 import com.dozycoffee.store.management.application.port.inbound.UpdateStoreUseCase
 import com.dozycoffee.store.management.application.port.inbound.command.RegisterStoreCommand
+import com.dozycoffee.store.management.application.port.inbound.command.SearchStoresQuery
 import com.dozycoffee.store.management.application.port.inbound.command.UpdateStoreCommand
 import com.dozycoffee.store.management.application.port.inbound.result.AddressResult
 import com.dozycoffee.store.management.application.port.inbound.result.StoreStatusResult
@@ -51,6 +54,9 @@ class StoreServiceTest : ApplicationTest() {
 
     @Autowired
     private lateinit var changeStatus: ChangeStoreStatusUseCase
+
+    @Autowired
+    private lateinit var searchStores: SearchStoresUseCase
 
     @Autowired
     private lateinit var calendar: BusinessCalendar
@@ -523,6 +529,95 @@ class StoreServiceTest : ApplicationTest() {
             assertEquals(attempts - 1, results.count { it.exceptionOrNull() is InvalidStoreStatusTransitionException })
             assertEquals(1, stored().version)
             assertEquals(StoreStatusResult.OPEN, stored().status)
+        }
+    }
+
+    @Nested
+    @DisplayName("매장 목록 검색 (S1·S7: 판매 범위 대상 고르기, 지역과 이름으로 찾기)")
+    inner class Search {
+        private fun seed() {
+            execute(insertStoreSql("ST-00000001", "강남역점", "OPEN", sido = "서울특별시", sigungu = "강남구"))
+            execute(insertStoreSql("ST-00000002", "역삼점", "PREPARING", sido = "서울특별시", sigungu = "강남구"))
+            execute(insertStoreSql("ST-00000003", "해운대점", "SUSPENDED", sido = "부산광역시", sigungu = "해운대구"))
+            execute(insertStoreSql("ST-00000004", "옛점", "CLOSED", closingDate = "2027-03-31"))
+        }
+
+        private fun search(query: SearchStoresQuery = SearchStoresQuery()) = call { searchStores.search(query) }
+
+        @Test
+        fun `판매 범위 대상 고르기는 기본 조회로 폐점하지 않은 모든 매장을 이름순으로 본다`() {
+            seed()
+
+            val page = search()
+
+            assertEquals(listOf("강남역점", "역삼점", "해운대점"), page.content.map { it.name })
+            assertEquals(3, page.totalElements)
+        }
+
+        @Test
+        fun `지역과 이름을 함께 주면 둘 다 만족하는 매장만 나온다`() {
+            seed()
+
+            val page = search(SearchStoresQuery(sido = "서울특별시", sigungu = "강남구", nameContains = "삼"))
+
+            assertEquals(listOf("역삼점"), page.content.map { it.name })
+        }
+
+        @Test
+        fun `상태로 폐점을 지정하면 폐점한 매장을 볼 수 있다`() {
+            seed()
+
+            val page = search(SearchStoresQuery(statuses = setOf(StoreStatusResult.CLOSED)))
+
+            val store = page.content.single()
+            assertEquals("옛점", store.name)
+            assertEquals(StoreStatusResult.CLOSED, store.status)
+            assertEquals(LocalDate.of(2027, 3, 31), store.closingDate)
+        }
+
+        @Test
+        fun `상태를 결과 타입으로 받아 모든 상태를 거를 수 있다`() {
+            seed()
+
+            StoreStatusResult.entries
+                .filter { it != StoreStatusResult.CLOSED }
+                .forEach { status ->
+                    val page = search(SearchStoresQuery(statuses = setOf(status)))
+                    assertEquals(setOf(status), page.content.map { it.status }.toSet(), "상태 $status")
+                    assertEquals(1, page.totalElements)
+                }
+        }
+
+        @Test
+        fun `결과는 등록·조회와 같은 모양의 매장 결과다`() {
+            val registered = call { registerStore.register(command()) }
+
+            val found = search().content.single()
+
+            assertEquals(registered, found)
+        }
+
+        @Test
+        fun `나눠서 조회하고 페이지 정보를 돌려준다`() {
+            (1..25).forEach { n -> execute(insertStoreSql("ST-%08d".format(n), "지점%02d".format(n))) }
+
+            val page = search(SearchStoresQuery(page = PageRequest(page = 2, size = 10)))
+
+            assertEquals(5, page.content.size)
+            assertEquals(2, page.page)
+            assertEquals(10, page.size)
+            assertEquals(25, page.totalElements)
+            assertEquals(3, page.totalPages)
+        }
+
+        @Test
+        fun `조건에 맞는 매장이 없으면 빈 페이지다`() {
+            seed()
+
+            val page = search(SearchStoresQuery(nameContains = "없는이름"))
+
+            assertTrue(page.content.isEmpty())
+            assertEquals(0, page.totalElements)
         }
     }
 }
