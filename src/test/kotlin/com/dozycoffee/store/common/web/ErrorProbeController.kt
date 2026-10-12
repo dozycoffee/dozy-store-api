@@ -5,12 +5,15 @@ import com.dozycoffee.store.core.ErrorCode
 import com.dozycoffee.store.core.ErrorType
 import com.dozycoffee.store.core.VersionConflictException
 import org.springframework.context.annotation.Profile
+import org.springframework.http.HttpHeaders
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.stereotype.Controller
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
@@ -83,6 +86,11 @@ class ErrorProbeController {
     fun number(
         @RequestParam size: Int,
     ): String = size.toString()
+
+    @PutMapping("/needs-version")
+    fun needsVersion(
+        @RequestHeader(HttpHeaders.IF_MATCH, required = false) ifMatch: String?,
+    ): String = VersionHeaders.parseIfMatch(ifMatch).toString()
 
     @PostMapping("/body-nested")
     fun nested(

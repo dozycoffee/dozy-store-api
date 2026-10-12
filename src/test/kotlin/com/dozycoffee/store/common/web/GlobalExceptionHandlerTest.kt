@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.http.MediaType
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.reactive.server.WebTestClient
@@ -246,6 +247,59 @@ class GlobalExceptionHandlerTest : ApiTest() {
         @Test
         fun `문법이 깨진 본문은 필드를 알 수 없어 일반 문구다`() {
             postNested("{ 깨진 json").assertInvalid("요청을 읽을 수 없습니다")
+        }
+    }
+
+    @Nested
+    @DisplayName("If-Match와 428")
+    inner class IfMatchHeader {
+        private fun put(ifMatch: String?) =
+            webTestClient
+                .put()
+                .uri("/api/v1/public/probe/needs-version")
+                .let { if (ifMatch != null) it.header("If-Match", ifMatch) else it }
+                .exchange()
+
+        @Test
+        fun `헤더가 없으면 428 VERSION_REQUIRED다`() {
+            put(null)
+                .expectStatus()
+                .isEqualTo(428)
+                .expectHeader()
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .expectBody()
+                .jsonPath("$.code")
+                .isEqualTo("VERSION_REQUIRED")
+                .jsonPath("$.title")
+                .isEqualTo("Version required")
+                .jsonPath("$.type")
+                .isEqualTo("https://docs.dozycoffee.com/errors/version-required")
+                .jsonPath("$.status")
+                .isEqualTo(428)
+                .jsonPath("$.traceId")
+                .isNotEmpty
+        }
+
+        @Test
+        fun `올바른 헤더는 버전을 읽는다`() {
+            put("\"7\"")
+                .expectStatus()
+                .isOk
+                .expectBody(String::class.java)
+                .isEqualTo("7")
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = ["7", "W/\"7\"", "*", "\"abc\"", "\"7\", \"8\""])
+        fun `형식이 틀리면 400 INVALID_REQUEST이고 If-Match를 알린다`(header: String) {
+            put(header)
+                .expectStatus()
+                .isBadRequest
+                .expectBody()
+                .jsonPath("$.code")
+                .isEqualTo("INVALID_REQUEST")
+                .jsonPath("$.detail")
+                .isEqualTo("요청 값이 올바르지 않습니다: If-Match")
         }
     }
 
