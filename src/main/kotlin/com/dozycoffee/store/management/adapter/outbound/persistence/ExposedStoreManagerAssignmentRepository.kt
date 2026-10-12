@@ -7,6 +7,7 @@ import com.dozycoffee.store.management.application.port.outbound.StoreManagerAss
 import com.dozycoffee.store.management.domain.manager.NewStoreManagerAssignment
 import com.dozycoffee.store.management.domain.manager.StoreManagerAssignment
 import com.dozycoffee.store.management.domain.manager.exception.StoreManagerAlreadyAssignedException
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.single
 import kotlinx.coroutines.flow.toList
 import org.jetbrains.exposed.v1.core.ResultRow
@@ -34,6 +35,19 @@ class ExposedStoreManagerAssignmentRepository : StoreManagerAssignmentRepository
             if (e.isUniqueViolationOf(PRIMARY_KEY)) throw StoreManagerAlreadyAssignedException(assignment.storeId, assignment.principal)
             throw e
         }
+
+    override suspend fun exists(
+        storeId: StoreId,
+        principal: PrincipalKey,
+    ): Boolean =
+        StoreManagersTable
+            .selectAll()
+            .where {
+                (StoreManagersTable.storeId eq storeId.value) and
+                    (StoreManagersTable.principalType eq principal.type) and
+                    (StoreManagersTable.principalId eq principal.id)
+            }.limit(1)
+            .firstOrNull() != null
 
     override suspend fun delete(
         storeId: StoreId,

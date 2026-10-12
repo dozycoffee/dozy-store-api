@@ -231,4 +231,41 @@ class ExposedStoreManagerAssignmentRepositoryTest : ApplicationTest() {
             assertTrue(tx { repository.findByPrincipal(account(1, PrincipalType.PARTNER)) }.isEmpty())
         }
     }
+
+    @Nested
+    @DisplayName("지정이 있는지 확인할 때")
+    inner class Exists {
+        @Test
+        fun `지정이 있으면 true다`() {
+            assign(1, account(1))
+
+            assertTrue(tx { repository.exists(StoreId(1), account(1)) })
+        }
+
+        @Test
+        fun `지정이 없으면 false다`() {
+            assertFalse(tx { repository.exists(StoreId(1), account(1)) })
+        }
+
+        @Test
+        fun `다른 매장의 지정은 이 매장의 지정이 아니다`() {
+            assign(2, account(1))
+
+            assertFalse(tx { repository.exists(StoreId(1), account(1)) })
+        }
+
+        @Test
+        fun `계정 ID가 같아도 계정 종류가 다르면 지정이 아니다`() {
+            assign(1, account(1, PrincipalType.PARTNER))
+
+            assertFalse(tx { repository.exists(StoreId(1), account(1, PrincipalType.EMPLOYEE)) })
+        }
+
+        @Test
+        fun `폐점한 매장의 지정도 확인된다`() {
+            assign(3, account(1))
+
+            assertTrue(tx { repository.exists(StoreId(3), account(1)) })
+        }
+    }
 }

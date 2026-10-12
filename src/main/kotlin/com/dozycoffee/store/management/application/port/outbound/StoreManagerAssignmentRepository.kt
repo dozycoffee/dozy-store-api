@@ -14,6 +14,12 @@ interface StoreManagerAssignmentRepository {
      */
     suspend fun insert(assignment: NewStoreManagerAssignment): StoreManagerAssignment
 
+    /** 그 (매장, 계정)의 지정이 있는지. 계정 종류와 ID가 모두 같아야 한다. */
+    suspend fun exists(
+        storeId: StoreId,
+        principal: PrincipalKey,
+    ): Boolean
+
     /** 지정을 지운다. 지울 대상이 있었으면 `true`, 없었으면 `false`다(없을 때의 거부는 서비스가 정한다). */
     suspend fun delete(
         storeId: StoreId,
