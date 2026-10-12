@@ -111,7 +111,7 @@ com.dozycoffee.store
 ├── core/                          # 도메인 공통 타입 (순수 Kotlin): AggregateRoot, DomainEvent, DomainException,
 │                                  #   ErrorCode, ErrorType, StoreId, ProductId, Sku 등
 ├── common/                        # 기술 공통 (모듈을 모름): TransactionRunner, event/(DomainEventDispatcher),
-│                                  #   exposed/(ExposedConfig, AdvisoryLockNamespace, AuditColumns), paging/, security/, time/(BusinessCalendar),
+│                                  #   exposed/(ExposedConfig, AdvisoryLockNamespace, AuditColumns), paging/, security/(StoreRoles, StoreAuthorization), time/(BusinessCalendar),
 │                                  #   web/(GlobalExceptionHandler, ProblemResponses, TraceIds, VersionHeaders, 요청 제한 필터)
 │
 ├── management/

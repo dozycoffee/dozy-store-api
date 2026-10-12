@@ -45,7 +45,7 @@ Store는 Catalog의 표시용 상품 정보를 조회한다([ADR-0002](../adr/00
    * 여러 realm을 받는 서비스는 모든 API에 계정 종류(type) 조건을 붙인다(스타터의 안내).
    * 역할은 접두사를 뗀 코드로 판단한다. 스타터가 `store:` 역할만 남기고 접두사를 떼므로 `store:admin`은 `hasRole('admin')`이다. 코드는 `StoreRoles` 상수를 쓴다.
    * 계정 종류 조건은 `authentication.principal.key.type.name() == 'EMPLOYEE'`처럼 쓴다. `@dozyAuth.isType(...)`는 단독으로는 동작하지만, WebFlux에서는 `Mono<Boolean>`이라 `and`로 다른 조건과 묶으면 평가에 실패해 500이 난다.
-   * 이 표현은 문자열 상수로 한 곳(`StoreAuthorization`)에 모아 컨트롤러가 가져다 쓴다.
+   * 역할 코드(`StoreRoles`)와 이 표현(`StoreAuthorization`)은 모든 모듈의 컨트롤러가 함께 쓰므로 `common.security`에 한 곳으로 둔다. 모듈의 adapter는 서로 참조할 수 없어서 모듈 안에 두면 모듈마다 복사하게 된다.
 - **매니저 검사(principal key와 매니저 지정 비교)는 `management`의 `CheckStoreAccessUseCase`가** 한다. 다른 모듈의 유스케이스는 이 UseCase를 같은 트랜잭션 안에서 부른다(ADR-0005). 매니저 지정은 DB를 봐야 해서 `@PreAuthorize`만으로는 판단할 수 없다.
 - Store의 서비스 계정 id·secret은 Auth 관리자가 발급하고, 배포 설정의 비밀값으로 넣는다. secret은 저장소에 두지 않는다. 교체하면 배포 설정을 바꾸고 서비스를 다시 띄운다.
 

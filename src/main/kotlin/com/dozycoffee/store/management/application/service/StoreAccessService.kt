@@ -1,11 +1,11 @@
 package com.dozycoffee.store.management.application.service
 
 import com.dozycoffee.store.common.TransactionRunner
+import com.dozycoffee.store.common.security.StoreRoles
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.management.application.port.inbound.CheckStoreAccessUseCase
 import com.dozycoffee.store.management.application.port.inbound.Requester
 import com.dozycoffee.store.management.application.port.inbound.StoreAccessMode
-import com.dozycoffee.store.management.application.port.inbound.StoreRoles
 import com.dozycoffee.store.management.application.port.inbound.result.StoreAccessResult
 import com.dozycoffee.store.management.application.port.inbound.result.StoreStatusResult
 import com.dozycoffee.store.management.application.port.outbound.StoreManagerAssignmentRepository

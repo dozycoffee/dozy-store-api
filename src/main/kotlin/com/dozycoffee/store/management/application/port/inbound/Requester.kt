@@ -2,6 +2,7 @@ package com.dozycoffee.store.management.application.port.inbound
 
 import com.dozycoffee.auth.core.PrincipalKey
 import com.dozycoffee.auth.core.PrincipalType
+import com.dozycoffee.store.common.security.StoreRoles
 
 /**
  * 요청한 사람. 검증된 토큰의 principal key와 역할이다. 토큰을 이 타입으로 바꾸는 일은 web 계층이 한다.

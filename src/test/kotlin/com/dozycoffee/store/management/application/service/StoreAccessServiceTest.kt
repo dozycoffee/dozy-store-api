@@ -1,6 +1,7 @@
 package com.dozycoffee.store.management.application.service
 
 import com.dozycoffee.auth.core.PrincipalType
+import com.dozycoffee.store.common.security.StoreRoles
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.fixture.insertManagerSql
 import com.dozycoffee.store.fixture.insertStoreSql
@@ -8,7 +9,6 @@ import com.dozycoffee.store.fixture.principalKey
 import com.dozycoffee.store.management.application.port.inbound.CheckStoreAccessUseCase
 import com.dozycoffee.store.management.application.port.inbound.Requester
 import com.dozycoffee.store.management.application.port.inbound.StoreAccessMode
-import com.dozycoffee.store.management.application.port.inbound.StoreRoles
 import com.dozycoffee.store.management.application.port.inbound.result.StoreStatusResult
 import com.dozycoffee.store.management.domain.store.exception.StoreErrorCode
 import com.dozycoffee.store.management.domain.store.exception.StoreNotFoundException
