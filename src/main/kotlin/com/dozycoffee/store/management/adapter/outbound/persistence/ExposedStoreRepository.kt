@@ -2,9 +2,11 @@ package com.dozycoffee.store.management.adapter.outbound.persistence
 
 import com.dozycoffee.store.common.exposed.dbNow
 import com.dozycoffee.store.common.exposed.isUniqueViolationOf
+import com.dozycoffee.store.common.paging.PageResult
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.core.VersionConflictException
 import com.dozycoffee.store.management.application.port.outbound.StoreRepository
+import com.dozycoffee.store.management.application.port.outbound.StoreSearchCriteria
 import com.dozycoffee.store.management.domain.store.Address
 import com.dozycoffee.store.management.domain.store.NewStore
 import com.dozycoffee.store.management.domain.store.Store
@@ -16,6 +18,8 @@ import kotlinx.coroutines.flow.single
 import kotlinx.coroutines.flow.toList
 import org.jetbrains.exposed.v1.core.Case
 import org.jetbrains.exposed.v1.core.Expression
+import org.jetbrains.exposed.v1.core.LikePattern
+import org.jetbrains.exposed.v1.core.Op
 import org.jetbrains.exposed.v1.core.QueryBuilder
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder
@@ -23,6 +27,8 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.intLiteral
+import org.jetbrains.exposed.v1.core.like
+import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.core.neq
 import org.jetbrains.exposed.v1.r2dbc.insertReturning
 import org.jetbrains.exposed.v1.r2dbc.select
@@ -67,6 +73,33 @@ class ExposedStoreRepository : StoreRepository {
                 StoresTable.id to SortOrder.ASC,
             ).toList()
             .map { it.toStore() }
+    }
+
+    override suspend fun search(criteria: StoreSearchCriteria): PageResult<Store> {
+        val conditions = mutableListOf<Op<Boolean>>()
+        if (criteria.ids.isNotEmpty()) conditions += StoresTable.id inList criteria.ids.map { it.value }
+        conditions +=
+            if (criteria.statuses.isEmpty()) {
+                StoresTable.status neq StoreStatus.CLOSED
+            } else {
+                StoresTable.status inList criteria.statuses
+            }
+        criteria.sido?.let { conditions += StoresTable.sido eq it }
+        criteria.sigungu?.let { conditions += StoresTable.sigungu eq it }
+        criteria.nameContains?.let { conditions += StoresTable.name.lowerCase() like containing(it.lowercase()) }
+        val matched = conditions.reduce { left, right -> left and right }
+
+        val total = StoresTable.selectAll().where { matched }.count()
+        val content =
+            StoresTable
+                .selectAll()
+                .where { matched }
+                .orderBy(StoresTable.name.koreanCollated() to SortOrder.ASC, StoresTable.id to SortOrder.ASC)
+                .limit(criteria.page.size)
+                .offset(criteria.page.offset)
+                .toList()
+                .map { it.toStore() }
+        return PageResult(content, criteria.page.page, criteria.page.size, total)
     }
 
     override suspend fun findByIdForUpdate(id: StoreId): Store? =
@@ -170,7 +203,11 @@ class ExposedStoreRepository : StoreRepository {
         }
     }
 
+    /** `%`, `_`를 글자 그대로 찾는 부분 일치 패턴. 대소문자를 무시하려고 컬럼과 패턴을 모두 소문자로 맞춘다. */
+    private fun containing(text: String): LikePattern = LikePattern("%", LIKE_ESCAPE) + LikePattern.ofLiteral(text, LIKE_ESCAPE) + "%"
+
     private companion object {
+        const val LIKE_ESCAPE = '\\'
         const val KOREAN_COLLATION = "ko-x-icu"
 
         /** 폐점하지 않은 매장 사이의 이름 유일 인덱스(V1__create_stores.sql) */

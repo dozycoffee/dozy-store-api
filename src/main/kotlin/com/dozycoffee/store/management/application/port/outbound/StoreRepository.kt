@@ -1,5 +1,6 @@
 package com.dozycoffee.store.management.application.port.outbound
 
+import com.dozycoffee.store.common.paging.PageResult
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.management.domain.store.NewStore
 import com.dozycoffee.store.management.domain.store.Store
@@ -19,6 +20,12 @@ interface StoreRepository {
      * 폐점하지 않은 매장이 앞에, 그 안에서 매장명 가나다순이다(폐점한 매장도 같은 순서로 뒤에 온다).
      */
     suspend fun findAllByIds(ids: Collection<StoreId>): List<Store>
+
+    /**
+     * 조건으로 매장을 검색한다. 매장명 가나다순이고 같은 이름이면 ID순이다.
+     * 상태 조건이 비어 있으면 폐점한 매장은 뺀다.
+     */
+    suspend fun search(criteria: StoreSearchCriteria): PageResult<Store>
 
     /** 행을 잠그고(`SELECT … FOR UPDATE`) 조회한다. 상태 전환처럼 읽고 바꾸는 사이에 다른 변경이 끼면 안 될 때 쓴다. */
     suspend fun findByIdForUpdate(id: StoreId): Store?

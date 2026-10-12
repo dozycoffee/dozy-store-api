@@ -1,25 +1,30 @@
 package com.dozycoffee.store.management.application.service
 
 import com.dozycoffee.store.common.TransactionRunner
+import com.dozycoffee.store.common.paging.PageResult
 import com.dozycoffee.store.common.time.BusinessCalendar
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.core.VersionConflictException
 import com.dozycoffee.store.management.application.port.inbound.ChangeStoreStatusUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreUseCase
 import com.dozycoffee.store.management.application.port.inbound.RegisterStoreUseCase
+import com.dozycoffee.store.management.application.port.inbound.SearchStoresUseCase
 import com.dozycoffee.store.management.application.port.inbound.UpdateStoreUseCase
 import com.dozycoffee.store.management.application.port.inbound.command.RegisterStoreCommand
+import com.dozycoffee.store.management.application.port.inbound.command.SearchStoresQuery
 import com.dozycoffee.store.management.application.port.inbound.command.UpdateStoreCommand
 import com.dozycoffee.store.management.application.port.inbound.result.StoreResult
 import com.dozycoffee.store.management.application.port.outbound.StoreCodeGenerator
 import com.dozycoffee.store.management.application.port.outbound.StoreRepository
+import com.dozycoffee.store.management.application.port.outbound.StoreSearchCriteria
 import com.dozycoffee.store.management.domain.store.NewStore
 import com.dozycoffee.store.management.domain.store.Store
+import com.dozycoffee.store.management.domain.store.StoreStatus
 import com.dozycoffee.store.management.domain.store.exception.StoreNameDuplicatedException
 import com.dozycoffee.store.management.domain.store.exception.StoreNotFoundException
 import org.springframework.stereotype.Service
 
-/** 매장의 등록, 조회, 정보 수정, 상태 전환. 유스케이스마다 트랜잭션 경계를 연다. */
+/** 매장의 등록, 조회, 검색, 정보 수정, 상태 전환. 유스케이스마다 트랜잭션 경계를 연다. */
 @Service
 class StoreService(
     private val stores: StoreRepository,
@@ -29,7 +34,8 @@ class StoreService(
 ) : RegisterStoreUseCase,
     GetStoreUseCase,
     UpdateStoreUseCase,
-    ChangeStoreStatusUseCase {
+    ChangeStoreStatusUseCase,
+    SearchStoresUseCase {
     override suspend fun register(command: RegisterStoreCommand): StoreResult =
         transactions.inTransaction {
             // 매장명 유일은 조회가 필요한 규칙이라 여기서 확인한다. 확인과 저장 사이에 같은 이름이 들어오는 경우는 DB의 부분 UNIQUE가 막는다.
@@ -74,6 +80,20 @@ class StoreService(
             val store = stores.findByIdForUpdate(id) ?: throw StoreNotFoundException(id)
             change(store)
             StoreResult.from(stores.save(store))
+        }
+
+    override suspend fun search(query: SearchStoresQuery): PageResult<StoreResult> =
+        transactions.inTransaction {
+            val criteria =
+                StoreSearchCriteria(
+                    ids = query.ids,
+                    statuses = query.statuses.map { StoreStatus.valueOf(it.name) }.toSet(),
+                    sido = query.sido,
+                    sigungu = query.sigungu,
+                    nameContains = query.nameContains,
+                    page = query.page,
+                )
+            stores.search(criteria).map(StoreResult::from)
         }
 
     override suspend fun get(id: StoreId): StoreResult =
