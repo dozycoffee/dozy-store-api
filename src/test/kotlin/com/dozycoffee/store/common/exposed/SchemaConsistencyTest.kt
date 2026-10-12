@@ -1,5 +1,6 @@
 package com.dozycoffee.store.common.exposed
 
+import com.dozycoffee.store.management.adapter.outbound.persistence.StoreManagersTable
 import com.dozycoffee.store.management.adapter.outbound.persistence.StoresTable
 import com.dozycoffee.store.support.ApplicationTest
 import org.jetbrains.exposed.v1.core.Table
@@ -18,6 +19,7 @@ class SchemaConsistencyTest : ApplicationTest() {
     private val tables: Array<Table> =
         arrayOf(
             StoresTable,
+            StoreManagersTable,
         )
 
     @Test

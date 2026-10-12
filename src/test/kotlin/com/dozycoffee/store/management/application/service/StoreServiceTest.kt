@@ -4,6 +4,7 @@ import com.dozycoffee.store.common.time.BusinessCalendar
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.core.VersionConflictException
 import com.dozycoffee.store.fixture.address
+import com.dozycoffee.store.fixture.insertStoreSql
 import com.dozycoffee.store.management.adapter.outbound.persistence.StoresTable
 import com.dozycoffee.store.management.application.port.inbound.ChangeStoreStatusUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreUseCase
@@ -63,17 +64,6 @@ class StoreServiceTest : ApplicationTest() {
     private fun <T> call(block: suspend () -> T): T = runBlocking { block() }
 
     private fun storeCount(): Int = tx { StoresTable.selectAll().count().toInt() }
-
-    private fun insertStoreSql(
-        code: String,
-        name: String,
-        status: String,
-        closingDate: String? = null,
-    ) = """
-        INSERT INTO stores (code, name, road_address, postal_code, sido, sigungu, phone, status, opening_date, closing_date)
-        VALUES ('$code', '$name', '도로명', '06232', '서울특별시', '강남구', '02-1234-5678', '$status', '2026-11-01',
-                ${closingDate?.let { "'$it'" } ?: "NULL"})
-        """.trimIndent()
 
     @Nested
     @DisplayName("S1 기본 흐름: 매장 등록")
