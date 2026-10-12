@@ -121,6 +121,21 @@ class Store private constructor(
     }
 }
 
-internal fun requireStoreName(name: String) = require(name.isNotBlank()) { "매장명은 비어 있을 수 없습니다" }
+/** 매장명: 비어 있지 않고, 길이 상한을 지키고, 앞뒤 공백이 없다(이름 유일 규칙이 공백 차이로 무력해지지 않게, 요구사항 1.1). */
+internal fun requireStoreName(name: String) {
+    require(name.isNotBlank()) { "매장명은 비어 있을 수 없습니다" }
+    requireMaxLength("매장명", name, StoreInputLimits.NAME_MAX)
+    require(name == name.trim()) { "매장명은 앞뒤 공백이 없어야 합니다" }
+}
 
-internal fun requireStorePhone(phone: String) = require(phone.isNotBlank()) { "매장 전화번호는 비어 있을 수 없습니다" }
+internal fun requireStorePhone(phone: String) {
+    require(phone.isNotBlank()) { "매장 전화번호는 비어 있을 수 없습니다" }
+    requireMaxLength("매장 전화번호", phone, StoreInputLimits.PHONE_MAX)
+}
+
+/** [value]의 길이가 [max]를 넘으면 거부한다. 메시지에는 값을 담지 않고 길이만 담는다. */
+internal fun requireMaxLength(
+    label: String,
+    value: String,
+    max: Int,
+) = require(value.length <= max) { "${label}의 길이는 ${max}자 이하여야 합니다: 현재 ${value.length}자" }

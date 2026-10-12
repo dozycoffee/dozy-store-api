@@ -314,4 +314,56 @@ class StoreTest {
             assertFailsWith<InvalidStoreStatusTransitionException> { store.close(today) }
         }
     }
+
+    @Nested
+    @DisplayName("입력 제한 (요구사항 1.1)")
+    inner class InputLimits {
+        private val newAddress = address(sigungu = "서초구")
+
+        @Test
+        fun `수정할 때 매장명이 50자를 넘으면 거부하고 상태는 그대로다`() {
+            val store = store()
+
+            assertFailsWith<IllegalArgumentException> { store.update("가".repeat(51), newAddress, "02-9999-0000", openingDate) }
+
+            assertEquals("강남역점", store.name)
+            assertEquals(address(), store.address)
+            assertEquals("02-1234-5678", store.phone)
+        }
+
+        @Test
+        fun `수정할 때 매장명의 앞뒤 공백을 거부하고 상태는 그대로다`() {
+            val store = store()
+
+            assertFailsWith<IllegalArgumentException> { store.update(" 서초점", newAddress, "02-9999-0000", openingDate) }
+            assertFailsWith<IllegalArgumentException> { store.update("서초점 ", newAddress, "02-9999-0000", openingDate) }
+
+            assertEquals("강남역점", store.name)
+        }
+
+        @Test
+        fun `수정할 때 전화번호가 20자를 넘으면 거부하고 상태는 그대로다`() {
+            val store = store()
+
+            assertFailsWith<IllegalArgumentException> { store.update("서초점", newAddress, "1".repeat(21), openingDate) }
+
+            assertEquals("02-1234-5678", store.phone)
+        }
+
+        @Test
+        fun `수정할 때 상한 길이의 값은 허용한다`() {
+            val store = store()
+
+            store.update("가".repeat(50), newAddress, "1".repeat(20), openingDate)
+
+            assertEquals(50, store.name.length)
+            assertEquals(20, store.phone.length)
+        }
+
+        @Test
+        fun `저장된 매장명이 제한을 어기면 복원할 때 거부한다`() {
+            assertFailsWith<IllegalArgumentException> { store(name = "가".repeat(51)) }
+            assertFailsWith<IllegalArgumentException> { store(name = "강남역점 ") }
+        }
+    }
 }

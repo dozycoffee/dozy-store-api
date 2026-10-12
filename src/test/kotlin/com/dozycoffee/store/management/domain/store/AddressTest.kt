@@ -70,4 +70,49 @@ class AddressTest {
             assertFailsWith<IllegalArgumentException> { address(detailAddress = value) }
         }
     }
+
+    @Nested
+    @DisplayName("길이 상한")
+    inner class Length {
+        private fun text(length: Int) = "가".repeat(length)
+
+        @Test
+        fun `도로명 주소는 100자까지 허용하고 넘으면 거부한다`() {
+            assertEquals(100, address(roadAddress = text(100)).roadAddress.length)
+            assertFailsWith<IllegalArgumentException> { address(roadAddress = text(101)) }
+        }
+
+        @Test
+        fun `상세 주소는 100자까지 허용하고 넘으면 거부한다`() {
+            assertEquals(100, address(detailAddress = text(100)).detailAddress?.length)
+            assertFailsWith<IllegalArgumentException> { address(detailAddress = text(101)) }
+        }
+
+        @Test
+        fun `우편번호는 10자까지 허용하고 넘으면 거부한다`() {
+            assertEquals(10, address(postalCode = "1".repeat(10)).postalCode.length)
+            assertFailsWith<IllegalArgumentException> { address(postalCode = "1".repeat(11)) }
+        }
+
+        @Test
+        fun `시·도와 시·군·구는 30자까지 허용하고 넘으면 거부한다`() {
+            assertEquals(30, address(sido = text(30)).sido.length)
+            assertEquals(30, address(sigungu = text(30)).sigungu.length)
+            assertFailsWith<IllegalArgumentException> { address(sido = text(31)) }
+            assertFailsWith<IllegalArgumentException> { address(sigungu = text(31)) }
+        }
+
+        @Test
+        fun `우편번호는 형식을 검증하지 않는다`() {
+            assertEquals("123-456", address(postalCode = "123-456").postalCode)
+            assertEquals("ABC", address(postalCode = "ABC").postalCode)
+        }
+
+        @Test
+        fun `거부 메시지에는 어느 항목이 문제인지와 길이가 담긴다`() {
+            val e = assertFailsWith<IllegalArgumentException> { address(roadAddress = text(101)) }
+
+            assertEquals("도로명 주소의 길이는 100자 이하여야 합니다: 현재 101자", e.message)
+        }
+    }
 }

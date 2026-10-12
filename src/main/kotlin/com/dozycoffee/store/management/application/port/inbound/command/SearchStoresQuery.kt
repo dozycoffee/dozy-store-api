@@ -3,6 +3,7 @@ package com.dozycoffee.store.management.application.port.inbound.command
 import com.dozycoffee.store.common.paging.PageRequest
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.management.application.port.inbound.result.StoreStatusResult
+import com.dozycoffee.store.management.domain.store.StoreInputLimits
 
 /**
  * 매장 목록 검색 조건(요구사항 1.4). 주어진 조건은 모두 만족해야 한다. 조건을 주지 않은 항목은 거르지 않는다.
@@ -15,7 +16,7 @@ data class SearchStoresQuery(
     val statuses: Set<StoreStatusResult> = emptySet(),
     val sido: String? = null,
     val sigungu: String? = null,
-    /** 매장명 부분 일치. 대소문자를 무시하고 `%`, `_`는 글자 그대로 찾는다. */
+    /** 매장명 부분 일치. 대소문자를 무시하고 `%`, `_`는 글자 그대로 찾는다. 길이는 매장명 상한을 넘을 수 없다. */
     val nameContains: String? = null,
     val page: PageRequest = PageRequest(),
 ) {
@@ -24,6 +25,9 @@ data class SearchStoresQuery(
         require(sido == null || sido.isNotBlank()) { "시·도는 비어 있을 수 없습니다" }
         require(sigungu == null || sigungu.isNotBlank()) { "시·군·구는 비어 있을 수 없습니다" }
         require(nameContains == null || nameContains.isNotBlank()) { "검색할 매장명은 비어 있을 수 없습니다" }
+        require(nameContains == null || nameContains.length <= StoreInputLimits.NAME_MAX) {
+            "검색할 매장명은 ${StoreInputLimits.NAME_MAX}자 이하여야 합니다: 현재 ${nameContains?.length}자"
+        }
     }
 
     companion object {

@@ -38,4 +38,10 @@ class SearchStoresQueryTest {
         assertFailsWith<IllegalArgumentException> { SearchStoresQuery(sigungu = value) }
         assertFailsWith<IllegalArgumentException> { SearchStoresQuery(nameContains = value) }
     }
+
+    @Test
+    fun `검색어는 매장명 상한인 50자까지 받는다`() {
+        assertEquals(50, SearchStoresQuery(nameContains = "가".repeat(50)).nameContains?.length)
+        assertFailsWith<IllegalArgumentException> { SearchStoresQuery(nameContains = "가".repeat(51)) }
+    }
 }
