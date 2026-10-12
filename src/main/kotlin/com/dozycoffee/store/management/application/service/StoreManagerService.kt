@@ -4,11 +4,14 @@ import com.dozycoffee.auth.core.PrincipalKey
 import com.dozycoffee.store.common.TransactionRunner
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.management.application.port.inbound.AssignStoreManagerUseCase
+import com.dozycoffee.store.management.application.port.inbound.FindManagedStoresUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreManagersByPrincipalUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreManagersUseCase
+import com.dozycoffee.store.management.application.port.inbound.Requester
 import com.dozycoffee.store.management.application.port.inbound.UnassignStoreManagerUseCase
 import com.dozycoffee.store.management.application.port.inbound.command.AssignStoreManagerCommand
 import com.dozycoffee.store.management.application.port.inbound.command.UnassignStoreManagerCommand
+import com.dozycoffee.store.management.application.port.inbound.result.ManagedStoreResult
 import com.dozycoffee.store.management.application.port.inbound.result.StoreManagerResult
 import com.dozycoffee.store.management.application.port.outbound.StoreManagerAssignmentRepository
 import com.dozycoffee.store.management.application.port.outbound.StoreRepository
@@ -19,7 +22,7 @@ import com.dozycoffee.store.management.domain.store.exception.StoreClosedExcepti
 import com.dozycoffee.store.management.domain.store.exception.StoreNotFoundException
 import org.springframework.stereotype.Service
 
-/** 매장 매니저의 지정, 해제, 조회. 유스케이스마다 트랜잭션 경계를 연다. */
+/** 매장 매니저의 지정, 해제, 조회와 요청자의 매니저 매장 목록. 유스케이스마다 트랜잭션 경계를 연다. */
 @Service
 class StoreManagerService(
     private val stores: StoreRepository,
@@ -28,7 +31,8 @@ class StoreManagerService(
 ) : AssignStoreManagerUseCase,
     UnassignStoreManagerUseCase,
     GetStoreManagersUseCase,
-    GetStoreManagersByPrincipalUseCase {
+    GetStoreManagersByPrincipalUseCase,
+    FindManagedStoresUseCase {
     override suspend fun assign(command: AssignStoreManagerCommand): StoreManagerResult =
         transactions.inTransaction {
             // 계정 종류 확인은 매장을 읽기 전에 한다. 요청 값 자체의 오류라 매장 상태와 무관하게 거부한다.
@@ -58,6 +62,14 @@ class StoreManagerService(
 
     override suspend fun getByPrincipal(principal: PrincipalKey): List<StoreManagerResult> =
         transactions.inTransaction { managers.findByPrincipal(principal).map(StoreManagerResult::from) }
+
+    override suspend fun find(requester: Requester): List<ManagedStoreResult> =
+        transactions.inTransaction {
+            if (!requester.canBeStoreManager()) return@inTransaction emptyList()
+
+            val storeIds = managers.findByPrincipal(requester.principal).map { it.storeId }
+            stores.findAllByIds(storeIds).map(ManagedStoreResult::from)
+        }
 
     private suspend fun requireStore(storeId: StoreId) {
         stores.findById(storeId) ?: throw StoreNotFoundException(storeId)

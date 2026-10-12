@@ -1,6 +1,5 @@
 package com.dozycoffee.store.management.application.service
 
-import com.dozycoffee.auth.core.PrincipalType
 import com.dozycoffee.store.common.TransactionRunner
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.management.application.port.inbound.CheckStoreAccessUseCase
@@ -44,17 +43,9 @@ class StoreAccessService(
             else -> isManagerOf(requester, storeId)
         }
 
-    /** 매니저로 인정되는 계정(파트너, 또는 `store:manager` 역할을 가진 직원)이고, 그 매장에 지정되어 있는가. */
+    /** 매니저로 인정되는 계정이고, 그 매장에 지정되어 있는가. */
     private suspend fun isManagerOf(
         requester: Requester,
         storeId: StoreId,
-    ): Boolean {
-        val eligible =
-            when (requester.principal.type) {
-                PrincipalType.PARTNER -> true
-                PrincipalType.EMPLOYEE -> requester.hasRole(StoreRoles.MANAGER)
-                PrincipalType.SYSTEM, PrincipalType.CUSTOMER -> false
-            }
-        return eligible && managers.exists(storeId, requester.principal)
-    }
+    ): Boolean = requester.canBeStoreManager() && managers.exists(storeId, requester.principal)
 }
