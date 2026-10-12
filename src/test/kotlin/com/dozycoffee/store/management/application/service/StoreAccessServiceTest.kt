@@ -132,7 +132,7 @@ class StoreAccessServiceTest : ApplicationTest() {
             execute(insertManagerSql(1, "EMPLOYEE", employeeId))
 
             assertDenied(employee(), preparing, StoreAccessMode.READ)
-            assertDenied(employee("wms:operator"), preparing, StoreAccessMode.WRITE)
+            assertDenied(employee("operator"), preparing, StoreAccessMode.WRITE)
         }
 
         @Test
