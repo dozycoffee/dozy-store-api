@@ -3,15 +3,20 @@ package com.dozycoffee.store.management.application.service
 import com.dozycoffee.auth.core.PrincipalKey
 import com.dozycoffee.auth.core.PrincipalType
 import com.dozycoffee.store.core.StoreId
+import com.dozycoffee.store.fixture.insertManagerSql
 import com.dozycoffee.store.fixture.insertStoreSql
 import com.dozycoffee.store.fixture.principalKey
 import com.dozycoffee.store.management.application.port.inbound.AssignStoreManagerUseCase
+import com.dozycoffee.store.management.application.port.inbound.FindManagedStoresUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreManagersByPrincipalUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreManagersUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreUseCase
+import com.dozycoffee.store.management.application.port.inbound.Requester
+import com.dozycoffee.store.management.application.port.inbound.StoreRoles
 import com.dozycoffee.store.management.application.port.inbound.UnassignStoreManagerUseCase
 import com.dozycoffee.store.management.application.port.inbound.command.AssignStoreManagerCommand
 import com.dozycoffee.store.management.application.port.inbound.command.UnassignStoreManagerCommand
+import com.dozycoffee.store.management.application.port.inbound.result.StoreStatusResult
 import com.dozycoffee.store.management.application.port.outbound.StoreRepository
 import com.dozycoffee.store.management.domain.manager.exception.InvalidManagerPrincipalTypeException
 import com.dozycoffee.store.management.domain.manager.exception.StoreManagerAlreadyAssignedException
@@ -52,6 +57,9 @@ class StoreManagerServiceTest : ApplicationTest() {
 
     @Autowired
     private lateinit var getManagersByPrincipal: GetStoreManagersByPrincipalUseCase
+
+    @Autowired
+    private lateinit var findManagedStores: FindManagedStoresUseCase
 
     @Autowired
     private lateinit var getStore: GetStoreUseCase
@@ -347,6 +355,88 @@ class StoreManagerServiceTest : ApplicationTest() {
         @Test
         fun `지정이 없는 계정은 빈 목록이다`() {
             assertTrue(call { getManagersByPrincipal.getByPrincipal(account(1)) }.isEmpty())
+        }
+    }
+
+    @Nested
+    @DisplayName("내 매장 목록 (내가 매니저인 매장)")
+    inner class FindManaged {
+        private fun requester(
+            principal: PrincipalKey,
+            vararg roles: String,
+        ) = Requester(principal, roles.toSet())
+
+        private fun managed(requester: Requester) = call { findManagedStores.find(requester) }
+
+        @Test
+        fun `지정된 매장의 ID, 코드, 이름, 상태를 돌려준다`() {
+            assign(open, account(1))
+
+            val result = managed(requester(account(1))).single()
+
+            assertEquals(open, result.storeId)
+            assertEquals("ST-00000001", result.code)
+            assertEquals("강남역점", result.name)
+            assertEquals(StoreStatusResult.PREPARING, result.status)
+        }
+
+        @Test
+        fun `폐점한 매장도 포함하고 폐점하지 않은 매장 뒤에 이름순으로 놓는다`() {
+            execute(insertStoreSql("ST-00000004", "나루점", "OPEN"))
+            execute(insertStoreSql("ST-00000005", "가나폐점", "CLOSED", closingDate = "2027-03-31"))
+            listOf(1L, 2L, 3L, 4L, 5L).forEach { execute(insertManagerSql(it, "PARTNER", UUID(0, 1))) }
+
+            val result = managed(requester(account(1)))
+
+            assertEquals(listOf("강남역점", "나루점", "역삼점", "가나폐점", "폐점점"), result.map { it.name })
+            assertEquals(StoreStatusResult.CLOSED, result.last().status)
+        }
+
+        @Test
+        fun `지정이 없으면 빈 목록이다`() {
+            assertTrue(managed(requester(account(1))).isEmpty())
+        }
+
+        @Test
+        fun `다른 계정의 지정은 섞이지 않는다`() {
+            assign(open, account(1))
+            assign(other, account(2))
+
+            assertEquals(listOf(open), managed(requester(account(1))).map { it.storeId })
+        }
+
+        @Test
+        fun `계정 ID가 같아도 계정 종류가 다르면 그 지정의 주인이 아니다`() {
+            assign(open, account(1, PrincipalType.PARTNER))
+
+            assertTrue(managed(requester(account(1, PrincipalType.EMPLOYEE), StoreRoles.MANAGER)).isEmpty())
+        }
+
+        @Test
+        fun `본사 직원은 store manager 역할이 있어야 매니저로 인정한다`() {
+            assign(open, account(1, PrincipalType.EMPLOYEE))
+
+            assertEquals(1, managed(requester(account(1, PrincipalType.EMPLOYEE), StoreRoles.MANAGER)).size)
+            assertTrue(managed(requester(account(1, PrincipalType.EMPLOYEE))).isEmpty())
+        }
+
+        @Test
+        fun `매장 관리·본사 조회 권한도 모든 매장이 아니라 자기가 지정된 매장만 돌려준다`() {
+            assign(open, account(1, PrincipalType.EMPLOYEE))
+
+            val admin = requester(account(1, PrincipalType.EMPLOYEE), StoreRoles.ADMIN, StoreRoles.MANAGER)
+            val adminWithoutAssignment = requester(account(2, PrincipalType.EMPLOYEE), StoreRoles.ADMIN, StoreRoles.VIEWER)
+
+            assertEquals(listOf(open), managed(admin).map { it.storeId })
+            assertTrue(managed(adminWithoutAssignment).isEmpty())
+        }
+
+        @ParameterizedTest
+        @EnumSource(PrincipalType::class, names = ["SYSTEM", "CUSTOMER"])
+        fun `서비스 계정과 고객은 매니저로 인정하지 않는다`(type: PrincipalType) {
+            execute(insertManagerSql(1, "PARTNER", UUID(0, 1)))
+
+            assertTrue(managed(requester(account(1, type), StoreRoles.MANAGER)).isEmpty())
         }
     }
 }

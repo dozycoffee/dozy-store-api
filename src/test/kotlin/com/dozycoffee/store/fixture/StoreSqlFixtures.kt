@@ -11,3 +11,10 @@ fun insertStoreSql(
     VALUES ('$code', '$name', '도로명', '06232', '서울특별시', '강남구', '02-1234-5678', '$status', '2026-11-01',
             ${closingDate?.let { "'$it'" } ?: "NULL"})
     """.trimIndent()
+
+/** 매니저 지정 행을 SQL로 직접 만든다. */
+fun insertManagerSql(
+    storeId: Long,
+    type: String,
+    principalId: java.util.UUID,
+) = "INSERT INTO store_managers (store_id, principal_type, principal_id) VALUES ($storeId, '$type', '$principalId')"

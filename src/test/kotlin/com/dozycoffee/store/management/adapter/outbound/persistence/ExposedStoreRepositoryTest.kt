@@ -433,4 +433,66 @@ class ExposedStoreRepositoryTest : ApplicationTest() {
             assertTrue(tx { repository.existsActiveByName("강남역점", excluding = other.id) })
         }
     }
+
+    @Nested
+    @DisplayName("ID 목록으로 조회할 때")
+    inner class FindAllByIds {
+        private fun names(vararg ids: Long) = tx { repository.findAllByIds(ids.map { StoreId(it) }) }.map { it.name }
+
+        @Test
+        fun `요청한 매장만 돌려주고 없는 ID는 빠진다`() {
+            execute(insertStoreSql("ST-00000001", "강남점"))
+            execute(insertStoreSql("ST-00000002", "나루점"))
+            execute(insertStoreSql("ST-00000003", "사당점"))
+
+            assertEquals(listOf("강남점", "사당점"), names(1, 3, 999))
+        }
+
+        @Test
+        fun `빈 목록이면 빈 목록을 돌려준다`() {
+            execute(insertStoreSql("ST-00000001", "강남점"))
+
+            assertTrue(tx { repository.findAllByIds(emptyList()) }.isEmpty())
+        }
+
+        @Test
+        fun `매장명 가나다순으로 정렬한다`() {
+            execute(insertStoreSql("ST-00000001", "사당점"))
+            execute(insertStoreSql("ST-00000002", "강남점"))
+            execute(insertStoreSql("ST-00000003", "나루점"))
+
+            assertEquals(listOf("강남점", "나루점", "사당점"), names(1, 2, 3))
+        }
+
+        @Test
+        fun `영문은 대소문자와 관계없이 사전순으로 정렬한다 (한국어 ICU 정렬 규칙)`() {
+            execute(insertStoreSql("ST-00000001", "charlie점"))
+            execute(insertStoreSql("ST-00000002", "Bravo점"))
+            execute(insertStoreSql("ST-00000003", "alpha점"))
+
+            assertEquals(listOf("alpha점", "Bravo점", "charlie점"), names(1, 2, 3))
+        }
+
+        @Test
+        fun `폐점한 매장은 이름이 앞서도 폐점하지 않은 매장 뒤로 가고 폐점 매장끼리는 이름순이다`() {
+            execute(insertStoreSql("ST-00000001", "가나점", "CLOSED", closingDate = "2027-03-31"))
+            execute(insertStoreSql("ST-00000002", "사당점", "OPEN"))
+            execute(insertStoreSql("ST-00000003", "가가점", "CLOSED", closingDate = "2027-03-31"))
+            execute(insertStoreSql("ST-00000004", "강남점", "SUSPENDED"))
+
+            assertEquals(listOf("강남점", "사당점", "가가점", "가나점"), names(1, 2, 3, 4))
+        }
+
+        @Test
+        fun `저장된 값을 그대로 돌려준다`() {
+            execute(insertStoreSql("ST-00000001", "폐점점", "CLOSED", closingDate = "2027-03-31"))
+
+            val store = tx { repository.findAllByIds(listOf(StoreId(1))) }.single()
+
+            assertEquals(StoreId(1), store.id)
+            assertEquals(StoreCode("ST-00000001"), store.code)
+            assertEquals(StoreStatus.CLOSED, store.status)
+            assertEquals(LocalDate.of(2027, 3, 31), store.closingDate)
+        }
+    }
 }
