@@ -46,6 +46,13 @@ class GlobalExceptionHandler(
             mapOf("currentVersion" to ex.currentVersion),
         )
 
+    /** 버전이 필요한 요청에 `If-Match`가 없음. */
+    @ExceptionHandler(VersionRequiredException::class)
+    fun handleVersionRequired(
+        ex: VersionRequiredException,
+        exchange: ServerWebExchange,
+    ): ResponseEntity<ProblemDetail> = problems.respond(exchange, HttpStatus.PRECONDITION_REQUIRED, "VERSION_REQUIRED", ex.message)
+
     /** 값 검증에 실패한 요청. `detail`에 문제가 된 필드 이름을 담는다. */
     @ExceptionHandler(InvalidRequestException::class)
     fun handleInvalidRequest(
