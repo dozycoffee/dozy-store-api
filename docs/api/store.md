@@ -101,12 +101,15 @@
 
 ## PUT `/admin/stores/{storeId}` — 매장 정보 수정 (요구사항 1.1, 1.2)
 
-등록과 같은 본문으로 매장 정보 전체를 바꾼다. `If-Match`가 필요하다.
+등록과 같은 본문으로 매장 정보 전체를 바꾼다. `If-Match`가 필요하다([낙관적 잠금](README.md#낙관적-잠금)).
+
+- 처리 순서는 인가 → `If-Match` → 본문 검증이다. `If-Match`가 없으면 `428 VERSION_REQUIRED`, 형식이 틀리면 `400 INVALID_REQUEST`다.
+- 성공하면 버전이 1 오르고 응답의 `ETag`가 새 버전이다.
 
 - `openingDate`는 `PREPARING`일 때만 바꿀 수 있다. 다른 상태에서는 지금 값과 같아야 한다.
 - 매장 코드와 상태는 이 요청으로 바꾸지 않는다.
 - 응답: `Store`
-- 오류: `STORE_NOT_FOUND`(404), `STORE_NAME_DUPLICATED`(409), `OPENING_DATE_NOT_CHANGEABLE`(409), `VERSION_CONFLICT`(409)
+- 오류: `STORE_NOT_FOUND`(404), `STORE_NAME_DUPLICATED`(409), `OPENING_DATE_NOT_CHANGEABLE`(409), `VERSION_CONFLICT`(409), `VERSION_REQUIRED`(428)
 
 ## 상태 전환 (요구사항 1.2)
 
@@ -117,7 +120,8 @@
 | `POST /admin/stores/{storeId}/resume` | `SUSPENDED → OPEN` | |
 | `POST /admin/stores/{storeId}/close` | `PREPARING` / `OPEN` / `SUSPENDED` → `CLOSED` | 폐점일 = 오늘 |
 
-- 본문은 없다. 즉시 반영한다(예약 없음).
+- 본문은 없다. `If-Match`도 받지 않고, 보내도 무시한다. 즉시 반영한다(예약 없음).
+- 전환하면 버전이 1 오르고 응답의 `ETag`가 새 버전이다. 전환하기 전에 본 버전으로 보낸 정보 수정(`PUT`)은 `409 VERSION_CONFLICT`다.
 - "오늘"은 업무 시간대(한국 시간) 기준이다.
 - 폐점해도 Catalog의 판매 범위와 매니저 지정은 그대로다(요구사항 1.2, 1.3).
 - 응답: `Store`
