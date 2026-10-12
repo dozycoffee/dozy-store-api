@@ -451,6 +451,16 @@ class ExposedStoreRepositoryTest : ApplicationTest() {
         }
 
         @Test
+        fun `1000개의 ID도 한 번에 조회한다`() {
+            execute(insertStoreSql("ST-00000001", "강남점"))
+            execute(insertStoreSql("ST-00000002", "나루점"))
+
+            val found = tx { repository.findAllByIds((1L..1000L).map { StoreId(it) }) }
+
+            assertEquals(listOf("강남점", "나루점"), found.map { it.name })
+        }
+
+        @Test
         fun `빈 목록이면 빈 목록을 돌려준다`() {
             execute(insertStoreSql("ST-00000001", "강남점"))
 
