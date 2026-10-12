@@ -109,6 +109,8 @@ flowchart LR
 | Store | 상태 전이는 개점(`Preparing → Open`), 휴업(`Open → Suspended`), 재개(`Suspended → Open`), 폐점(`Closed` 외 → `Closed`)만 허용 | `InvalidStoreStatusTransitionException` |
 | Store | 개점 예정일은 `Preparing`에서만 바꿀 수 있다 | `OpeningDateNotChangeableException` |
 | Store | 개점하면 개점일이 그날로, 폐점하면 폐점일이 그날로 정해진다 | — (메서드가 기록) |
+| Store, Address | 매장명·전화번호와 주소 항목은 비어 있지 않고 길이 제한(요구사항 1.1)을 지킨다. 상세 주소는 없거나 비어 있지 않다 | `IllegalArgumentException`(`require`). web이 요청 오류(400)로 먼저 거른다 |
+| Store | 매장명은 앞뒤 공백이 없다. 이름 유일 규칙(요구사항 1.1)이 공백 차이로 무력해지지 않게 한다 | `IllegalArgumentException`(`require`). web이 공백을 제거해서 넘긴다 |
 | StoreDisplayOrder | 진열 순서 목록에 같은 상품은 한 번만 들어간다 | `DuplicateDisplayOrderProductException` |
 | StoreProductAvailability (2단계) | `INVENTORY` 출처의 품절 상태는 매니저가 바꿀 수 없다 | `StockStatusNotManuallyEditableException` |
 | StoreProductAvailability (2단계) | `OWNER` 출처에는 재고 이벤트를 반영할 수 없다 | `InventoryEventNotApplicableException` |

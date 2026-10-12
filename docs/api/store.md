@@ -66,6 +66,18 @@
 ```
 
 - 매장은 `PREPARING`으로 생성되고 매장 코드가 부여된다.
+- 요청 필드의 제한은 아래와 같다(요구사항 1.1). `PUT`도 같다. 문자열은 앞뒤 공백을 제거한 뒤 검사하고, 어기면 `INVALID_REQUEST`(400, `detail`에 필드 이름)다.
+
+| 필드 | 제한 |
+|---|---|
+| `name` | 필수, 1~50자 |
+| `address.roadAddress` | 필수, 1~100자 |
+| `address.detailAddress` | 없으면 `null`, 100자 이하. 비어 있으면 `null`로 본다 |
+| `address.postalCode` | 필수, 1~10자 (형식은 검증하지 않는다) |
+| `address.sido`, `address.sigungu` | 필수, 1~30자 |
+| `phone` | 필수, 1~20자 (형식은 검증하지 않는다) |
+| `openingDate` | 필수, 날짜 |
+
 - 응답: `201 Created`, `Location: /api/v1/admin/stores/{storeId}`, `Store`
 - 오류: `STORE_NAME_DUPLICATED`(409)
 
@@ -76,7 +88,7 @@
 | `ids` | 매장 ID로 거른다 |
 | `status` | 상태로 거른다. 여러 값은 쉼표로 구분(`OPEN,SUSPENDED`). 주지 않으면 `CLOSED`를 뺀 모든 상태 |
 | `sido`, `sigungu` | 지역으로 거른다 |
-| `q` | 매장명 부분 일치 (대소문자 무시) |
+| `q` | 매장명 부분 일치 (대소문자 무시). 1~50자 |
 | `page`, `size` | [페이징](README.md#목록-조회) |
 
 - 응답: `Store`의 페이지. 매장명 가나다순이다.
