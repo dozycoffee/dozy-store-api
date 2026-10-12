@@ -171,6 +171,84 @@ class GlobalExceptionHandlerTest : ApiTest() {
         }
     }
 
+    @Nested
+    @DisplayName("INVALID_REQUEST의 필드 이름")
+    inner class InvalidRequestField {
+        private fun postNested(json: String) =
+            webTestClient
+                .post()
+                .uri("/api/v1/public/probe/body-nested")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(BodyInserters.fromValue(json))
+                .exchange()
+
+        private fun WebTestClient.ResponseSpec.assertInvalid(detail: String) {
+            expectStatus()
+                .isBadRequest
+                .expectHeader()
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .expectBody()
+                .jsonPath("$.code")
+                .isEqualTo("INVALID_REQUEST")
+                .jsonPath("$.detail")
+                .isEqualTo(detail)
+        }
+
+        @Test
+        fun `요청 값 검증 예외는 필드 이름을 detail에 담는다`() {
+            get("/invalid-request").assertInvalid("요청 값이 올바르지 않습니다: address.roadAddress")
+        }
+
+        @Test
+        fun `허용되지 않는 enum 값은 그 필드 이름을 알린다`() {
+            postNested("""{"status": "UNKNOWN"}""").assertInvalid("요청 값이 올바르지 않습니다: status")
+        }
+
+        @Test
+        fun `날짜 형식이 틀리면 그 필드 이름을 알린다`() {
+            postNested("""{"openingDate": "2026-13-45"}""").assertInvalid("요청 값이 올바르지 않습니다: openingDate")
+        }
+
+        @Test
+        fun `중첩된 필드는 점으로 이은 경로를 알린다`() {
+            postNested("""{"address": {"roadAddress": {"잘못": "객체"}}}""")
+                .assertInvalid("요청 값이 올바르지 않습니다: address.roadAddress")
+        }
+
+        @Test
+        fun `목록 안의 필드는 위치까지 알린다`() {
+            postNested("""{"items": [{"roadAddress": "정상"}, {"roadAddress": {"잘못": "객체"}}]}""")
+                .assertInvalid("요청 값이 올바르지 않습니다: items[1].roadAddress")
+        }
+
+        @Test
+        fun `쿼리 파라미터의 타입이 틀리면 그 파라미터 이름을 알린다`() {
+            webTestClient
+                .get()
+                .uri("/api/v1/public/probe/number?size=abc")
+                .exchange()
+                .assertInvalid("요청 값이 올바르지 않습니다: size")
+        }
+
+        @Test
+        fun `입력한 값은 응답에 담지 않는다`() {
+            val body =
+                postNested("""{"status": "비밀로그인값"}""")
+                    .expectStatus()
+                    .isBadRequest
+                    .expectBody(String::class.java)
+                    .returnResult()
+                    .responseBody!!
+
+            assert("비밀로그인값" !in body) { body }
+        }
+
+        @Test
+        fun `문법이 깨진 본문은 필드를 알 수 없어 일반 문구다`() {
+            postNested("{ 깨진 json").assertInvalid("요청을 읽을 수 없습니다")
+        }
+    }
+
     @Test
     fun `인증 스타터의 401과 같은 형식이다`() {
         val starter: WebTestClient.ResponseSpec = webTestClient.get().uri("/api/v1/admin/stores").exchange()

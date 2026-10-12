@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
 
 enum class ProbeErrorCode(
@@ -32,6 +33,20 @@ class ProbeException(
 
 data class ProbeBody(
     val name: String,
+)
+
+enum class ProbeStatus { OPEN, CLOSED }
+
+data class ProbeAddress(
+    val roadAddress: String?,
+)
+
+/** 필드 경로 확인용. 모든 필드를 널 허용으로 받아 형식 오류만 Jackson이 던지게 한다. */
+data class ProbeNested(
+    val status: ProbeStatus?,
+    val openingDate: java.time.LocalDate?,
+    val address: ProbeAddress?,
+    val items: List<ProbeAddress>?,
 )
 
 /**
@@ -60,6 +75,19 @@ class ErrorProbeController {
 
     @GetMapping("/forbidden")
     fun forbidden(): String = throw AccessDeniedException("역할 없음")
+
+    @GetMapping("/invalid-request")
+    fun invalidRequest(): String = throw InvalidRequestException("address.roadAddress")
+
+    @GetMapping("/number")
+    fun number(
+        @RequestParam size: Int,
+    ): String = size.toString()
+
+    @PostMapping("/body-nested")
+    fun nested(
+        @RequestBody body: ProbeNested,
+    ): String = "ok"
 
     @PostMapping("/body")
     fun body(
