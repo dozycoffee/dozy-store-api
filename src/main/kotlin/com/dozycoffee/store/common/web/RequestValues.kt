@@ -32,4 +32,58 @@ object RequestValues {
         if (trimmed.length > max) throw InvalidRequestException(field)
         return trimmed
     }
+
+    /** 양의 정수(ID)여야 한다. 경로 변수와 쿼리 파라미터는 문자열로 받아 여기서 검증한다. */
+    fun positiveLong(
+        field: String,
+        value: String?,
+    ): Long {
+        val number = required(field, value).trim().toLongOrNull()
+        if (number == null || number <= 0) throw InvalidRequestException(field)
+        return number
+    }
+
+    /**
+     * 쉼표로 구분한 양의 정수 목록. 값이 없거나 비어 있으면 빈 목록이다.
+     * 항목이 비었거나 숫자가 아니거나 [max]개를 넘으면 거부한다. 같은 값이 여러 번 와도 한 번만 담는다.
+     */
+    fun positiveLongs(
+        field: String,
+        value: String?,
+        max: Int,
+    ): Set<Long> {
+        if (value.isNullOrBlank()) return emptySet()
+        val items = value.split(',')
+        if (items.size > max) throw InvalidRequestException(field)
+        return items.map { positiveLong(field, it) }.toSet()
+    }
+
+    /**
+     * 쉼표로 구분한 enum 이름 목록(대문자 이름 그대로). 값이 없거나 비어 있으면 빈 집합이다.
+     * 항목이 비었거나 허용되지 않는 값이면 거부한다.
+     */
+    fun <E : Enum<E>> enums(
+        field: String,
+        value: String?,
+        type: Class<E>,
+    ): Set<E> {
+        if (value.isNullOrBlank()) return emptySet()
+        return value
+            .split(',')
+            .map { item -> type.enumConstants.firstOrNull { it.name == item.trim() } ?: throw InvalidRequestException(field) }
+            .toSet()
+    }
+
+    /** 정수 쿼리 파라미터. 없으면 [default]이고, 있으면 정수이면서 [range] 안이어야 한다. */
+    fun int(
+        field: String,
+        value: String?,
+        default: Int,
+        range: IntRange,
+    ): Int {
+        if (value == null) return default
+        val number = value.trim().toIntOrNull()
+        if (number == null || number !in range) throw InvalidRequestException(field)
+        return number
+    }
 }
