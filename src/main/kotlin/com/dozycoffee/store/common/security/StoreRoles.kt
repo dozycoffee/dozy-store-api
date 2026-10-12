@@ -1,4 +1,4 @@
-package com.dozycoffee.store.management.application.port.inbound
+package com.dozycoffee.store.common.security
 
 /**
  * Store가 쓰는 역할(docs/api/README.md 역할). 역할은 Auth에 `store:admin`처럼 등록한다.

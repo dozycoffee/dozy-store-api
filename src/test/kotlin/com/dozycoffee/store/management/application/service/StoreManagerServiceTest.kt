@@ -2,6 +2,7 @@ package com.dozycoffee.store.management.application.service
 
 import com.dozycoffee.auth.core.PrincipalKey
 import com.dozycoffee.auth.core.PrincipalType
+import com.dozycoffee.store.common.security.StoreRoles
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.fixture.insertManagerSql
 import com.dozycoffee.store.fixture.insertStoreSql
@@ -12,7 +13,6 @@ import com.dozycoffee.store.management.application.port.inbound.GetStoreManagers
 import com.dozycoffee.store.management.application.port.inbound.GetStoreManagersUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreUseCase
 import com.dozycoffee.store.management.application.port.inbound.Requester
-import com.dozycoffee.store.management.application.port.inbound.StoreRoles
 import com.dozycoffee.store.management.application.port.inbound.UnassignStoreManagerUseCase
 import com.dozycoffee.store.management.application.port.inbound.command.AssignStoreManagerCommand
 import com.dozycoffee.store.management.application.port.inbound.command.UnassignStoreManagerCommand
