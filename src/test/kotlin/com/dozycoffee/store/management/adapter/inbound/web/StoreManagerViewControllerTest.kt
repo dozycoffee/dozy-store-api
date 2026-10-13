@@ -285,4 +285,124 @@ class StoreManagerViewControllerTest : ApiTest() {
             get("abc", null).assertProblem(401, "UNAUTHENTICATED")
         }
     }
+
+    private fun mine(token: String?): WebTestClient.ResponseSpec {
+        val request = webTestClient.get().uri("/api/v1/me/stores")
+        return (if (token != null) request.header(HttpHeaders.AUTHORIZATION, "Bearer $token") else request).exchange()
+    }
+
+    private fun namesOf(token: String): List<String> {
+        val body =
+            mine(token)
+                .expectStatus()
+                .isOk
+                .expectBody()
+                .returnResult()
+                .responseBody!!
+        return json.readTree(body).values().map { it.get("name").asString() }
+    }
+
+    @Nested
+    @DisplayName("GET /me/stores — 내 매장 목록")
+    inner class MyStores {
+        @Test
+        fun `지정된 매장의 storeId, code, name, status만 돌려준다`() {
+            assignPartner(2)
+
+            val body =
+                json.readTree(
+                    mine(partner())
+                        .expectStatus()
+                        .isOk
+                        .expectBody()
+                        .returnResult()
+                        .responseBody!!,
+                )
+
+            assertEquals(1, body.size())
+            val store = body.get(0)
+            assertEquals(setOf("storeId", "code", "name", "status"), store.propertyNames().toSet())
+            assertEquals(2, store.get("storeId").asLong())
+            assertEquals("ST-00000002", store.get("code").asString())
+            assertEquals("역삼점", store.get("name").asString())
+            assertEquals("OPEN", store.get("status").asString())
+        }
+
+        @Test
+        fun `지정이 없으면 빈 배열이다`() {
+            mine(partner())
+                .expectStatus()
+                .isOk
+                .expectBody()
+                .json("[]")
+        }
+
+        @Test
+        fun `폐점한 매장도 포함하고 폐점하지 않은 매장이 앞에 매장명 가나다순이다`() {
+            assignPartner(3)
+            assignPartner(2)
+            assignPartner(1)
+
+            assertEquals(listOf("강남역점", "역삼점", "폐점점"), namesOf(partner()))
+        }
+
+        @Test
+        fun `다른 점주의 지정은 보이지 않는다`() {
+            assignPartner(1, UUID.fromString("00000000-0000-7000-8000-0000000000ff"))
+            assignPartner(2)
+
+            assertEquals(listOf("역삼점"), namesOf(partner()))
+        }
+
+        @Test
+        fun `매장 매니저 역할이 있는 직원은 자기 지정만 본다`() {
+            assignEmployee(1)
+            assignPartner(2)
+
+            assertEquals(listOf("강남역점"), namesOf(employee("store:manager")))
+        }
+
+        @Test
+        fun `본사 권한도 가진 직원은 모든 매장이 아니라 자기가 지정된 매장만 본다`() {
+            assignEmployee(2)
+
+            assertEquals(listOf("역삼점"), namesOf(employee("store:manager", "store:admin")))
+        }
+
+        @Test
+        fun `ID가 같아도 계정 종류가 지정과 다르면 보이지 않는다`() {
+            assignPartner(2, employeeId)
+            assignEmployee(1, partnerId)
+
+            mine(employee("store:manager"))
+                .expectStatus()
+                .isOk
+                .expectBody()
+                .json("[]")
+            mine(partner())
+                .expectStatus()
+                .isOk
+                .expectBody()
+                .json("[]")
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = ["store:admin", "store:viewer"])
+        fun `매장 매니저 역할이 없는 직원은 지정돼 있어도 403이다`(role: String) {
+            assignEmployee(2)
+
+            mine(employee(role)).assertProblem(403, "FORBIDDEN")
+            mine(employee()).assertProblem(403, "FORBIDDEN")
+        }
+
+        @Test
+        fun `서비스 계정은 403이다`() {
+            mine(token(PrincipalType.SYSTEM, employeeId, "store:catalog_agent")).assertProblem(403, "FORBIDDEN")
+        }
+
+        @Test
+        fun `토큰이 없으면 401이다`() {
+            mine(null).assertProblem(401, "UNAUTHENTICATED")
+        }
+    }
 }

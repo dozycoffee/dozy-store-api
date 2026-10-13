@@ -6,8 +6,10 @@ import com.dozycoffee.store.common.security.StoreAuthorization
 import com.dozycoffee.store.common.web.ApiPaths
 import com.dozycoffee.store.common.web.RequestValues
 import com.dozycoffee.store.core.StoreId
+import com.dozycoffee.store.management.adapter.inbound.web.response.ManagedStoreResponse
 import com.dozycoffee.store.management.adapter.inbound.web.response.StoreViewResponse
 import com.dozycoffee.store.management.application.port.inbound.CheckStoreAccessUseCase
+import com.dozycoffee.store.management.application.port.inbound.FindManagedStoresUseCase
 import com.dozycoffee.store.management.application.port.inbound.GetStoreUseCase
 import com.dozycoffee.store.management.application.port.inbound.Requester
 import com.dozycoffee.store.management.application.port.inbound.StoreAccessMode
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController
 class StoreManagerViewController(
     private val checkAccess: CheckStoreAccessUseCase,
     private val getStore: GetStoreUseCase,
+    private val findManagedStores: FindManagedStoresUseCase,
 ) {
     /** 한 매장의 정보. 폐점한 매장도 조회된다. 없는 매장과 접근할 수 없는 매장은 같은 404다. 매니저는 고칠 수 없으므로 `ETag`는 없다. */
     @PreAuthorize(StoreAuthorization.MANAGER_OR_ADMIN_OR_VIEWER)
@@ -38,4 +41,11 @@ class StoreManagerViewController(
         checkAccess.check(Requester.from(principal), id, StoreAccessMode.READ)
         return StoreViewResponse.from(getStore.get(id))
     }
+
+    /** 내가 매니저로 지정된 매장(폐점 포함). 본사 권한이 있어도 자기가 지정된 매장만 돌려준다. 페이징하지 않는다. */
+    @PreAuthorize(StoreAuthorization.MANAGER)
+    @GetMapping("/me/stores")
+    suspend fun listMine(
+        @CurrentPrincipal principal: AuthenticatedPrincipal,
+    ): List<ManagedStoreResponse> = findManagedStores.find(Requester.from(principal)).map(ManagedStoreResponse::from)
 }
