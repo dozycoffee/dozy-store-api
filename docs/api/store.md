@@ -14,8 +14,8 @@
 | POST | `/admin/stores/{storeId}/suspend` | 휴업 | | `store:admin` |
 | POST | `/admin/stores/{storeId}/resume` | 재개 | | `store:admin` |
 | POST | `/admin/stores/{storeId}/close` | 폐점 | | `store:admin` |
-| GET | `/stores/{storeId}` | 한 매장의 정보 (매니저 화면) | | 매니저, `store:admin`, `store:viewer` |
-| GET | `/me/stores` | 내가 매니저인 매장 목록 | | 매니저 |
+| GET | `/stores/{storeId}` | 한 매장의 정보 (매니저 화면) | | 그 매장의 매니저, `store:admin`, `store:viewer` |
+| GET | `/me/stores` | 내가 매니저인 매장 목록 | | 매니저(파트너, 또는 `store:manager`를 가진 직원) |
 
 ## 매장 (`Store`)
 
@@ -131,12 +131,14 @@
 
 매니저 화면의 머리글처럼 매장 정보를 보여 줄 때 쓴다.
 
-- 응답: `Store`에서 `version`을 뺀 것. 폐점한 매장도 조회된다(매니저는 읽기 전용, 요구사항 1.4).
-- 오류: `STORE_NOT_FOUND`(404, 없거나 매니저로 지정되지 않은 매장)
+- 호출자: 파트너 계정, 또는 `store:admin`·`store:viewer`·`store:manager` 중 하나를 가진 직원. `store:admin`·`store:viewer`는 모든 매장을 읽고, 그 밖에는 그 매장의 매니저로 지정돼 있어야 한다. 매니저 지정이 있어도 직원이 `store:manager`를 갖지 않으면 `403`이다(요구사항 1.3).
+- 처리 순서는 인가 → `storeId` 검증 → 매장 접근 확인이다.
+- 응답: `Store`에서 `version`을 뺀 것. 폐점한 매장도 조회된다(매니저는 읽기 전용, 요구사항 1.4). 매니저는 매장 정보를 고칠 수 없어 `ETag`는 없다. 정보 수정에 쓸 `version`이 필요하면 `/admin/stores/{storeId}`를 쓴다.
+- 오류: `INVALID_REQUEST`(400, `storeId` 형식), `STORE_NOT_FOUND`(404, 없는 매장과 매니저로 지정되지 않은 매장을 구분하지 않는다. 계정 ID가 같아도 계정 종류가 지정과 다르면 매니저가 아니다)
 
 ## GET `/me/stores` — 내 매장 목록 (요구사항 1.3, 1.4)
 
-토큰의 principal key가 매니저로 지정된 매장 목록이다.
+토큰의 principal key가 매니저로 지정된 매장 목록이다. 호출자는 파트너 계정, 또는 `store:manager`를 가진 직원이다. `store:admin`·`store:viewer`만 가진 직원은 `403`이고, `store:manager`를 함께 가져도 모든 매장이 아니라 자기가 지정된 매장만 돌려준다(전체 매장 목록은 `/admin/stores`).
 
 ```json
 [
@@ -147,4 +149,5 @@
 
 - 폐점한 매장도 포함한다. 화면은 `status`로 읽기 전용을 표시한다.
 - 정렬: 폐점하지 않은 매장이 앞에, 그 안에서 매장명 가나다순
+- 지정된 매장이 없으면 빈 배열이다.
 - 페이징하지 않는다.
