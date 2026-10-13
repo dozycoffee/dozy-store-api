@@ -1,5 +1,6 @@
 package com.dozycoffee.store.management.application.port.inbound
 
+import com.dozycoffee.auth.core.AuthenticatedPrincipal
 import com.dozycoffee.auth.core.PrincipalKey
 import com.dozycoffee.auth.core.PrincipalType
 import com.dozycoffee.store.common.security.StoreRoles
@@ -25,4 +26,9 @@ data class Requester(
             PrincipalType.EMPLOYEE -> hasRole(StoreRoles.MANAGER)
             PrincipalType.SYSTEM, PrincipalType.CUSTOMER -> false
         }
+
+    companion object {
+        /** 검증된 토큰의 요청자. 역할은 스타터가 접두사를 뗀 코드 그대로 담는다. */
+        fun from(principal: AuthenticatedPrincipal): Requester = Requester(principal.key, principal.roles)
+    }
 }
