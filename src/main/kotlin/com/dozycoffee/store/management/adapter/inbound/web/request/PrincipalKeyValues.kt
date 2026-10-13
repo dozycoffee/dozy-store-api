@@ -4,6 +4,7 @@ import com.dozycoffee.auth.core.PrincipalKey
 import com.dozycoffee.auth.core.PrincipalType
 import com.dozycoffee.store.common.web.InvalidRequestException
 import com.dozycoffee.store.common.web.RequestValues
+import com.dozycoffee.store.management.domain.manager.ASSIGNABLE_PRINCIPAL_TYPES
 
 /**
  * 요청의 principal key를 읽는다. 형식은 Auth의 것을 그대로 쓴다(docs/api/README.md 요청·응답 형식): 계정 종류는 소문자
@@ -17,6 +18,15 @@ object PrincipalKeyValues {
         field: String,
         value: String?,
     ): PrincipalKey = PrincipalKey.fromSubOrNull(RequestValues.required(field, value)) ?: throw InvalidRequestException(field)
+
+    /**
+     * 매니저로 지정할 수 있는 계정(`partner`, `employee`)의 `partner:uuid` 형식. 계정 종류가 그 밖이면(`system`, `customer`) 요청 실수일 가능성이
+     * 높아 형식 오류로 거부한다(docs/api/manager.md의 계정별 조회). 지정 가능한 종류는 도메인의 규칙을 그대로 쓴다.
+     */
+    fun assignableFromSub(
+        field: String,
+        value: String?,
+    ): PrincipalKey = fromSub(field, value).also { if (it.type !in ASSIGNABLE_PRINCIPAL_TYPES) throw InvalidRequestException(field) }
 
     /**
      * 계정 종류와 계정 ID를 따로 받는 본문용. 모르는 종류(`admin`)와 UUID 형식 오류를 각 필드 이름으로 알린다.
