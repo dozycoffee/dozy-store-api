@@ -11,6 +11,7 @@
 
 - **Store는 Auth를 호출하지 않는다.** 지정할 계정을 찾고 본인인지 확인하는 일, 매니저 목록에 이름 같은 계정 정보를 붙이는 일은 본사 화면(또는 BFF)이 Auth로 한다. Store는 principal key만 저장하고 돌려준다(요구사항 1.3).
 - Store는 계정이 실제로 있는지 확인하지 않는다. 없는 계정이 지정되더라도 그 계정으로 받을 토큰이 없으므로 아무도 매장을 관리할 수 없다.
+- **principal key의 표현**: Auth가 토큰에 담는 값과 그대로 비교해야 하므로 Auth의 표현을 엄격하게 쓴다. 계정 종류는 소문자(`partner`, `employee`), 계정 ID는 하이픈이 있는 소문자 UUID이고, 경로와 쿼리에서는 `partner:0199a3c4-…`(`sub` 형식)이다. 대문자, 앞뒤 공백, 하이픈이 없는 UUID는 고쳐 주지 않고 `400 INVALID_REQUEST`(`detail`에 필드 이름)로 거부한다.
 
 ## 매니저 지정 (`StoreManager`)
 
@@ -44,7 +45,7 @@
 - 응답: `201 Created`, `Location: /api/v1/admin/stores/{storeId}/managers/{principalType}:{principalId}`, `StoreManager`
 - 폐점한 매장에는 지정할 수 없다. 폐점 전에 지정된 매니저는 남아 있고, 해제는 할 수 있다.
 - 오류: `STORE_NOT_FOUND`(404), `STORE_CLOSED`(409), `STORE_MANAGER_ALREADY_ASSIGNED`(409), `INVALID_MANAGER_PRINCIPAL_TYPE`(400, `system`·`customer`)
-- `principalId`가 UUID 형식이 아니면 `INVALID_REQUEST`(400)다.
+- 올바른 계정 종류인데 매니저로 지정할 수 없는 종류(`system`, `customer`)는 `INVALID_MANAGER_PRINCIPAL_TYPE`이고, 모르는 종류(`admin`)나 `principalId`가 UUID 형식이 아닌 경우는 `INVALID_REQUEST`(400, `detail`에 `principalType` 또는 `principalId`)다.
 
 ## DELETE `/admin/stores/{storeId}/managers/{principalKey}` — 매니저 지정 해제
 
@@ -53,6 +54,7 @@
 - 매장의 개별 설정(진열·노출·수동 품절)은 바뀌지 않는다.
 - 응답: `204 No Content`
 - 오류: `STORE_NOT_FOUND`(404), `STORE_MANAGER_NOT_FOUND`(404)
+- `principalKey`의 형식이 틀리면 `INVALID_REQUEST`(400)다. 형식이 맞으면 계정 종류와 관계없이 해당 지정을 찾고, 없으면 `STORE_MANAGER_NOT_FOUND`다. `system`처럼 저장될 수 없는 종류의 키도 마찬가지다.
 
 ## GET `/admin/store-managers` — 한 계정이 매니저인 매장 목록
 
@@ -63,3 +65,4 @@
 | `principalKey` | 필수. `partner:…` 또는 `employee:…` |
 
 - 응답: `StoreManager` 배열. 폐점한 매장의 지정도 포함한다.
+- `principalKey`가 없거나 형식이 틀리거나 `partner`·`employee`가 아닌 종류(`system`, `customer`)면 `INVALID_REQUEST`(400, `detail`에 `principalKey`)다. 지정할 수 없는 종류의 계정을 찾는 요청은 실수일 가능성이 높아서 빈 배열 대신 거부한다.
