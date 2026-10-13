@@ -27,4 +27,7 @@ object StoreAuthorization {
 
     /** 매장 매니저가 될 수 있는 호출자: 파트너 계정, 또는 `manager` 역할을 가진 본사 직원 (내 매장 목록 등 "내 것" 조회) */
     const val MANAGER = "$PARTNER or (hasRole('${StoreRoles.MANAGER}') and $EMPLOYEE)"
+
+    /** Catalog의 서비스 계정(`SYSTEM`)이면서 `catalog_agent` 역할을 가진 호출자. 본사 직원은 이 역할을 가져도 거부한다. */
+    const val CATALOG_AGENT = "hasRole('${StoreRoles.CATALOG_AGENT}') and authentication.principal.key.type.name() == 'SYSTEM'"
 }

@@ -14,4 +14,7 @@ object StoreRoles {
 
     /** 매장 매니저 역할(`store:manager`, 본사 직원): 이 역할만으로는 어떤 매장도 관리할 수 없고, 매니저로 지정된 매장만 다룬다 */
     const val MANAGER = "manager"
+
+    /** Catalog의 서비스 계정 역할(`store:catalog_agent`): 내부 API(`/internal` 아래)만 부를 수 있다 */
+    const val CATALOG_AGENT = "catalog_agent"
 }
