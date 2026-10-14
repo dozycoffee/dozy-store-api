@@ -8,10 +8,11 @@ import com.dozycoffee.store.core.ProductId
 import com.dozycoffee.store.core.Sku
 import com.dozycoffee.store.core.StoreId
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import org.jetbrains.exposed.v1.core.ResultRow
+import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.vendors.ForUpdateOption
 import org.jetbrains.exposed.v1.r2dbc.batchInsert
 import org.jetbrains.exposed.v1.r2dbc.deleteWhere
@@ -67,6 +68,18 @@ class ExposedCatalogProductRepository : CatalogProductRepository {
         insertTargets(product)
     }
 
+    override suspend fun findByIdsForShare(productIds: Collection<ProductId>): List<CatalogProduct> {
+        if (productIds.isEmpty()) return emptyList()
+        val rows =
+            CatalogProductsTable
+                .selectAll()
+                .where { CatalogProductsTable.productId inList productIds.map { it.value }.distinct() }
+                .orderBy(CatalogProductsTable.productId to SortOrder.ASC)
+                .forUpdate(ForUpdateOption.PostgreSQL.ForShare())
+                .toList()
+        return toProducts(rows)
+    }
+
     private suspend fun find(
         productId: ProductId,
         lock: ForUpdateOption,
@@ -77,18 +90,29 @@ class ExposedCatalogProductRepository : CatalogProductRepository {
                 .where { CatalogProductsTable.productId eq productId.value }
                 .forUpdate(lock)
                 .firstOrNull() ?: return null
-        return row.toProduct(targetStoreIds(row))
+        return toProducts(listOf(row)).single()
     }
 
-    /** `LIMITED`일 때만 대상 매장을 읽는다. `ALL`이면 대상 매장 테이블을 읽지 않는다. */
-    private suspend fun targetStoreIds(row: ResultRow): Set<StoreId> {
-        if (row[CatalogProductsTable.storeScope] != StoreScopeKind.LIMITED) return emptySet()
+    /** 읽은 상품 행들을 복제본으로 만든다. 대상 매장은 `LIMITED`인 상품들의 것을 상품마다 읽지 않고 한 번에 묶어 읽는다. */
+    private suspend fun toProducts(rows: List<ResultRow>): List<CatalogProduct> {
+        val limitedIds =
+            rows
+                .filter {
+                    it[CatalogProductsTable.storeScope] == StoreScopeKind.LIMITED
+                }.map { it[CatalogProductsTable.productId] }
+        val targets = targetStoreIds(limitedIds)
+        return rows.map { it.toProduct(targets[it[CatalogProductsTable.productId]].orEmpty()) }
+    }
+
+    /** 상품별 대상 매장. 대상이 없는 상품은 맵에 없다. */
+    private suspend fun targetStoreIds(productIds: List<Long>): Map<Long, Set<StoreId>> {
+        if (productIds.isEmpty()) return emptyMap()
         return CatalogProductTargetStoresTable
-            .select(CatalogProductTargetStoresTable.storeId)
-            .where { CatalogProductTargetStoresTable.productId eq row[CatalogProductsTable.productId] }
-            .map { StoreId(it[CatalogProductTargetStoresTable.storeId]) }
+            .selectAll()
+            .where { CatalogProductTargetStoresTable.productId inList productIds }
             .toList()
-            .toSet()
+            .groupBy({ it[CatalogProductTargetStoresTable.productId] }, { StoreId(it[CatalogProductTargetStoresTable.storeId]) })
+            .mapValues { it.value.toSet() }
     }
 
     private suspend fun insertTargets(product: CatalogProduct) {

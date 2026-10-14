@@ -329,4 +329,73 @@ class ExposedCatalogProductRepositoryTest : ApplicationTest() {
             assertEquals(1, stored?.sequence)
         }
     }
+
+    @Nested
+    @DisplayName("findByIdsForShare")
+    inner class FindByIdsForShare {
+        private fun findAll(vararg ids: Long) = tx { repository.findByIdsForShare(ids.map { ProductId(it) }) }
+
+        private fun seedProducts() {
+            insert(catalogProduct(productId = ProductId(1), sku = Sku("DZ-00000001"), scope = StoreScope.All))
+            insert(catalogProduct(productId = ProductId(2), sku = Sku("DZ-00000002"), scope = stores(10, 20)))
+            insert(catalogProduct(productId = ProductId(3), sku = Sku("DZ-00000003"), scope = stores(30)))
+            insert(catalogProduct(productId = ProductId(4), sku = Sku("DZ-00000004"), scope = StoreScope.Limited(emptySet())))
+        }
+
+        @Test
+        fun `요청한 순서와 관계없이 상품 ID 순서로 돌려준다`() {
+            seedProducts()
+
+            assertEquals(listOf(1L, 2L, 3L), findAll(3, 1, 2).map { it.productId.value })
+        }
+
+        @Test
+        fun `없는 ID는 결과에서 빠진다`() {
+            seedProducts()
+
+            assertEquals(listOf(2L, 4L), findAll(999, 4, 2, 998).map { it.productId.value })
+        }
+
+        @Test
+        fun `같은 ID가 여러 번 와도 한 번만 돌려준다`() {
+            seedProducts()
+
+            assertEquals(listOf(1L, 2L), findAll(2, 1, 2, 1).map { it.productId.value })
+        }
+
+        @Test
+        fun `빈 목록이면 빈 결과다`() {
+            seedProducts()
+
+            assertEquals(emptyList(), findAll())
+        }
+
+        @Test
+        fun `판매 범위를 상품마다 그대로 읽는다 (모든 매장, 여러 매장, 한 매장, 빈 한정)`() {
+            seedProducts()
+
+            val scopes = findAll(1, 2, 3, 4).associate { it.productId.value to it.scope }
+
+            assertEquals(StoreScope.All, scopes[1])
+            assertEquals(stores(10, 20), scopes[2])
+            assertEquals(stores(30), scopes[3])
+            assertEquals(StoreScope.Limited(emptySet()), scopes[4])
+        }
+
+        @Test
+        fun `한 상품씩 읽은 값과 같다`() {
+            seedProducts()
+
+            findAll(1, 2, 3, 4).forEach { product ->
+                assertSame(product, tx { repository.findByIdForShare(product.productId) })
+            }
+        }
+
+        @Test
+        fun `삭제된 상품도 읽는다 (판단은 호출한 쪽이 한다)`() {
+            insert(catalogProduct(deleted = true))
+
+            assertEquals(true, findAll(1).single().deleted)
+        }
+    }
 }
