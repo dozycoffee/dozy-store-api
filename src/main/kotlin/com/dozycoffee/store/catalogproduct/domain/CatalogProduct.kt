@@ -11,19 +11,58 @@ import java.time.Instant
  * 값은 Catalog 이벤트로만 바뀌고 Store의 어떤 요청도 직접 바꾸지 않는다.
  *
  * 처음 복제할 때는 [replicate]로 만들고, 저장소에서 복원할 때는 [reconstitute]로 만든다.
+ * 이벤트는 [apply]로 반영한다. 변경 메서드는 규칙을 모두 확인한 뒤에 값을 바꾸므로, 거부되면 상태가 그대로다.
  */
 class CatalogProduct private constructor(
     val productId: ProductId,
-    val sku: Sku?,
-    val status: CatalogProductStatus,
-    val scope: StoreScope,
+    sku: Sku?,
+    status: CatalogProductStatus,
+    scope: StoreScope,
     val tracksInventory: Boolean,
-    val sequence: Long,
+    sequence: Long,
     val deleted: Boolean,
-    val lastEventAt: Instant,
+    lastEventAt: Instant,
 ) : AggregateRoot() {
+    var sku: Sku? = sku
+        private set
+
+    var status: CatalogProductStatus = status
+        private set
+
+    var scope: StoreScope = scope
+        private set
+
+    /** 마지막으로 반영한 이벤트의 순번. 이보다 크지 않은 이벤트는 무시한다. */
+    var sequence: Long = sequence
+        private set
+
+    /** 마지막으로 반영한 이벤트의 발생 시각. 기록용이며 순서 기준이 아니다. */
+    var lastEventAt: Instant = lastEventAt
+        private set
+
     init {
         require(sequence >= 0) { "순번은 0 이상이어야 합니다: 상품 $productId, 순번 $sequence" }
+    }
+
+    /**
+     * Catalog 이벤트의 상태 전체를 반영한다(요구사항 3.5, 7.1). 종류와 관계없이 같은 방식이다.
+     *
+     * 순번이 복제본보다 클 때만 상태 전체로 교체한다. 같거나 작으면(오래됐거나 중복) 아무것도 바꾸지 않는다.
+     * 삭제된 복제본은 되살아나지 않으므로 반영하지 않는다.
+     * 판매 범위가 이전과 다를 때만 [CatalogProductScopeChanged]를 쌓는다.
+     */
+    fun apply(snapshot: CatalogProductSnapshot): CatalogProductApplyResult {
+        require(snapshot.productId == productId) { "다른 상품의 상태입니다: 복제본 $productId, 스냅샷 ${snapshot.productId}" }
+        if (deleted || snapshot.sequence <= sequence) return CatalogProductApplyResult.NOT_APPLIED
+
+        val scopeChanged = snapshot.scope != scope
+        sku = snapshot.sku
+        status = snapshot.status
+        scope = snapshot.scope
+        sequence = snapshot.sequence
+        lastEventAt = snapshot.occurredAt
+        if (scopeChanged) registerEvent(CatalogProductScopeChanged(productId, scope))
+        return CatalogProductApplyResult(applied = true, scopeChanged = scopeChanged)
     }
 
     companion object {

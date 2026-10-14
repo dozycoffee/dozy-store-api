@@ -127,4 +127,152 @@ class CatalogProductTest {
             assertFailsWith<IllegalArgumentException> { catalogProduct(sequence = -1) }
         }
     }
+
+    @Nested
+    @DisplayName("S5 이벤트 반영 (apply)")
+    inner class Apply {
+        private val first = Instant.parse("2026-10-14T01:00:00Z")
+        private val later = Instant.parse("2026-10-14T05:00:00Z")
+
+        private fun product(
+            scope: StoreScope = StoreScope.All,
+            sequence: Long = 5,
+            sku: Sku? = Sku("DZ-00000001"),
+            status: CatalogProductStatus = CatalogProductStatus.DRAFT,
+            deleted: Boolean = false,
+        ) = catalogProduct(sku = sku, status = status, scope = scope, sequence = sequence, deleted = deleted, lastEventAt = first)
+
+        @Test
+        fun `순번이 큰 이벤트는 상태 전체로 교체한다`() {
+            val product = product()
+
+            val result =
+                product.apply(
+                    snapshot(
+                        sku = Sku("DZ-00000009"),
+                        status = CatalogProductStatus.ACTIVE,
+                        scope = StoreScope.All,
+                        sequence = 6,
+                        occurredAt = later,
+                    ),
+                )
+
+            assertTrue(result.applied)
+            assertEquals(Sku("DZ-00000009"), product.sku)
+            assertEquals(CatalogProductStatus.ACTIVE, product.status)
+            assertEquals(6, product.sequence)
+            assertEquals(later, product.lastEventAt)
+        }
+
+        @Test
+        fun `S5 2a 순번 6을 반영한 뒤 순번 5가 오면 무시하고 상태가 그대로다`() {
+            val product = product(sequence = 4)
+            product.apply(snapshot(status = CatalogProductStatus.ACTIVE, sequence = 6, occurredAt = later))
+
+            val result = product.apply(snapshot(status = CatalogProductStatus.DISCONTINUED, sequence = 5))
+
+            assertEquals(CatalogProductApplyResult.NOT_APPLIED, result)
+            assertEquals(CatalogProductStatus.ACTIVE, product.status)
+            assertEquals(6, product.sequence)
+            assertEquals(later, product.lastEventAt)
+        }
+
+        @Test
+        fun `같은 순번(중복)은 무시한다`() {
+            val product = product(sequence = 5)
+
+            val result = product.apply(snapshot(status = CatalogProductStatus.ACTIVE, sequence = 5, occurredAt = later))
+
+            assertFalse(result.applied)
+            assertEquals(CatalogProductStatus.DRAFT, product.status)
+            assertEquals(first, product.lastEventAt)
+        }
+
+        @Test
+        fun `반영하지 않으면 이벤트도 쌓지 않는다`() {
+            val product = product(scope = StoreScope.All, sequence = 5)
+
+            product.apply(snapshot(scope = StoreScope.Limited(setOf(StoreId(1))), sequence = 5))
+
+            assertTrue(product.pullDomainEvents().isEmpty())
+        }
+
+        @Test
+        fun `판매 범위가 바뀌면 이벤트를 쌓고 바뀜을 알린다`() {
+            val limited = StoreScope.Limited(setOf(StoreId(1), StoreId(2)))
+            val other = StoreScope.Limited(setOf(StoreId(3)))
+            val product = product(scope = StoreScope.All, sequence = 1)
+
+            val toLimited = product.apply(snapshot(scope = limited, sequence = 2))
+            val toOther = product.apply(snapshot(scope = other, sequence = 3))
+            val toAll = product.apply(snapshot(scope = StoreScope.All, sequence = 4))
+
+            assertEquals(CatalogProductApplyResult(applied = true, scopeChanged = true), toLimited)
+            assertEquals(CatalogProductApplyResult(applied = true, scopeChanged = true), toOther)
+            assertEquals(CatalogProductApplyResult(applied = true, scopeChanged = true), toAll)
+            assertEquals(
+                listOf(
+                    CatalogProductScopeChanged(ProductId(1), limited),
+                    CatalogProductScopeChanged(ProductId(1), other),
+                    CatalogProductScopeChanged(ProductId(1), StoreScope.All),
+                ),
+                product.pullDomainEvents(),
+            )
+        }
+
+        @Test
+        fun `판매 범위가 같으면 반영은 하지만 이벤트를 쌓지 않는다 (활성화, 같은 범위로 다시 지정)`() {
+            val scope = StoreScope.Limited(setOf(StoreId(1), StoreId(2)))
+            val product = product(scope = scope, sequence = 1)
+
+            val activated = product.apply(snapshot(status = CatalogProductStatus.ACTIVE, scope = scope, sequence = 2))
+            val sameAgain =
+                product.apply(
+                    snapshot(status = CatalogProductStatus.ACTIVE, scope = StoreScope.Limited(setOf(StoreId(2), StoreId(1))), sequence = 3),
+                )
+
+            assertEquals(CatalogProductApplyResult(applied = true, scopeChanged = false), activated)
+            assertEquals(CatalogProductApplyResult(applied = true, scopeChanged = false), sameAgain)
+            assertEquals(3, product.sequence)
+            assertTrue(product.pullDomainEvents().isEmpty())
+        }
+
+        @Test
+        fun `SKU가 생기거나 사라지는 교체를 허용한다`() {
+            val product = product(sku = null, sequence = 1)
+
+            product.apply(snapshot(sku = Sku("DZ-00000002"), sequence = 2))
+            assertEquals(Sku("DZ-00000002"), product.sku)
+
+            product.apply(snapshot(sku = null, sequence = 3))
+            assertNull(product.sku)
+        }
+
+        @Test
+        fun `다른 상품의 상태는 거부하고 복제본이 그대로다`() {
+            val product = product(sequence = 5)
+
+            assertFailsWith<IllegalArgumentException> { product.apply(snapshot(productId = ProductId(2), sequence = 9)) }
+
+            assertEquals(5, product.sequence)
+            assertEquals(CatalogProductStatus.DRAFT, product.status)
+            assertTrue(product.pullDomainEvents().isEmpty())
+        }
+
+        @Test
+        fun `삭제된 복제본은 더 큰 순번이어도 반영하지 않는다`() {
+            val product = product(deleted = true, sequence = 5)
+
+            val result =
+                product.apply(
+                    snapshot(status = CatalogProductStatus.ACTIVE, scope = StoreScope.Limited(setOf(StoreId(1))), sequence = 9),
+                )
+
+            assertEquals(CatalogProductApplyResult.NOT_APPLIED, result)
+            assertTrue(product.deleted)
+            assertEquals(CatalogProductStatus.DRAFT, product.status)
+            assertEquals(5, product.sequence)
+            assertTrue(product.pullDomainEvents().isEmpty())
+        }
+    }
 }
