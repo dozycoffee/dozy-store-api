@@ -1,5 +1,7 @@
 package com.dozycoffee.store.common.exposed
 
+import com.dozycoffee.store.catalogproduct.adapter.outbound.persistence.CatalogProductTargetStoresTable
+import com.dozycoffee.store.catalogproduct.adapter.outbound.persistence.CatalogProductsTable
 import com.dozycoffee.store.management.adapter.outbound.persistence.StoreManagersTable
 import com.dozycoffee.store.management.adapter.outbound.persistence.StoresTable
 import com.dozycoffee.store.support.ApplicationTest
@@ -20,6 +22,8 @@ class SchemaConsistencyTest : ApplicationTest() {
         arrayOf(
             StoresTable,
             StoreManagersTable,
+            CatalogProductsTable,
+            CatalogProductTargetStoresTable,
         )
 
     @Test
