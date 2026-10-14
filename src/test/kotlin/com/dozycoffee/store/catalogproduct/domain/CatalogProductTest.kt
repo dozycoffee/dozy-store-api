@@ -1,5 +1,6 @@
 package com.dozycoffee.store.catalogproduct.domain
 
+import com.dozycoffee.store.catalogproduct.domain.event.CatalogProductDeleted
 import com.dozycoffee.store.catalogproduct.domain.event.CatalogProductScopeChanged
 import com.dozycoffee.store.core.ProductId
 import com.dozycoffee.store.core.Sku
@@ -334,6 +335,104 @@ class CatalogProductTest {
             val result = product.apply(snapshot(tracksInventory = true, sequence = 9))
 
             assertEquals(CatalogProductApplyResult.NOT_APPLIED, result)
+        }
+    }
+
+    @Nested
+    @DisplayName("S5 삭제 표시 (markDeleted)")
+    inner class MarkDeleted {
+        private val deletedAt = Instant.parse("2026-10-15T03:00:00Z")
+
+        @Test
+        fun `삭제로 표시하고 삭제 이벤트를 한 번 쌓는다`() {
+            val product = catalogProduct(productId = ProductId(7), sequence = 5)
+
+            val marked = product.markDeleted(deletedAt)
+
+            assertTrue(marked)
+            assertTrue(product.deleted)
+            assertEquals(listOf(CatalogProductDeleted(ProductId(7))), product.pullDomainEvents())
+        }
+
+        @Test
+        fun `마지막 이벤트 시각만 삭제 이벤트의 시각으로 기록하고 나머지 상태는 그대로다`() {
+            val scope = StoreScope.Limited(setOf(StoreId(1)))
+            val product =
+                catalogProduct(
+                    status = CatalogProductStatus.DRAFT,
+                    scope = scope,
+                    tracksInventory = true,
+                    sequence = 5,
+                )
+
+            product.markDeleted(deletedAt)
+
+            assertEquals(deletedAt, product.lastEventAt)
+            assertEquals(5, product.sequence)
+            assertEquals(CatalogProductStatus.DRAFT, product.status)
+            assertEquals(scope, product.scope)
+            assertTrue(product.tracksInventory)
+        }
+
+        @Test
+        fun `이미 삭제된 복제본에 다시 부르면 아무것도 바꾸지 않는다`() {
+            val first = Instant.parse("2026-10-14T01:00:00Z")
+            val product = catalogProduct(deleted = true, lastEventAt = first)
+
+            val marked = product.markDeleted(deletedAt)
+
+            assertFalse(marked)
+            assertEquals(first, product.lastEventAt)
+            assertTrue(product.pullDomainEvents().isEmpty())
+        }
+
+        @Test
+        fun `S5 2b 삭제된 뒤에는 더 큰 순번의 이벤트도 되살리지 못한다`() {
+            val product = catalogProduct(sequence = 5)
+            product.markDeleted(deletedAt)
+            product.pullDomainEvents()
+
+            val result = product.apply(snapshot(status = CatalogProductStatus.ACTIVE, sequence = 99))
+
+            assertEquals(CatalogProductApplyResult.NOT_APPLIED, result)
+            assertTrue(product.deleted)
+            assertEquals(5, product.sequence)
+            assertTrue(product.pullDomainEvents().isEmpty())
+        }
+
+        @Test
+        fun `처음 복제한 직후에 삭제하면 이벤트가 쌓인 순서대로 나온다`() {
+            val scope = StoreScope.Limited(setOf(StoreId(1)))
+            val product = CatalogProduct.replicate(snapshot(productId = ProductId(3), scope = scope))
+
+            product.markDeleted(deletedAt)
+
+            assertEquals(
+                listOf(CatalogProductScopeChanged(ProductId(3), scope), CatalogProductDeleted(ProductId(3))),
+                product.pullDomainEvents(),
+            )
+        }
+
+        @Test
+        fun `삭제 표시된 상태를 같은 값으로 복원할 수 있다`() {
+            val product = CatalogProduct.replicate(snapshot(sequence = 4))
+            product.markDeleted(deletedAt)
+
+            val restored =
+                CatalogProduct.reconstitute(
+                    productId = product.productId,
+                    sku = product.sku,
+                    status = product.status,
+                    scope = product.scope,
+                    tracksInventory = product.tracksInventory,
+                    sequence = product.sequence,
+                    deleted = product.deleted,
+                    lastEventAt = product.lastEventAt,
+                )
+
+            assertTrue(restored.deleted)
+            assertEquals(deletedAt, restored.lastEventAt)
+            assertEquals(CatalogProductApplyResult.NOT_APPLIED, restored.apply(snapshot(sequence = 9)))
         }
     }
 }

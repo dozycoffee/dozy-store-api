@@ -1,5 +1,6 @@
 package com.dozycoffee.store.catalogproduct.domain
 
+import com.dozycoffee.store.catalogproduct.domain.event.CatalogProductDeleted
 import com.dozycoffee.store.catalogproduct.domain.event.CatalogProductScopeChanged
 import com.dozycoffee.store.core.AggregateRoot
 import com.dozycoffee.store.core.ProductId
@@ -20,7 +21,7 @@ class CatalogProduct private constructor(
     scope: StoreScope,
     val tracksInventory: Boolean,
     sequence: Long,
-    val deleted: Boolean,
+    deleted: Boolean,
     lastEventAt: Instant,
 ) : AggregateRoot() {
     var sku: Sku? = sku
@@ -30,6 +31,10 @@ class CatalogProduct private constructor(
         private set
 
     var scope: StoreScope = scope
+        private set
+
+    /** 삭제로 표시됐는가. 행을 지우지 않고 표시하며, 한번 true가 되면 바뀌지 않는다. */
+    var deleted: Boolean = deleted
         private set
 
     /** 마지막으로 반영한 이벤트의 순번. 이보다 크지 않은 이벤트는 무시한다. */
@@ -67,6 +72,20 @@ class CatalogProduct private constructor(
         lastEventAt = snapshot.occurredAt
         if (scopeChanged) registerEvent(CatalogProductScopeChanged(productId, scope))
         return CatalogProductApplyResult(applied = true, scopeChanged = scopeChanged)
+    }
+
+    /**
+     * 삭제로 표시한다(요구사항 3.5). 행을 지우지 않는 것은 늦게 도착한 그 상품의 오래된 이벤트로 상품이 되살아나지 않게 하기 위해서다.
+     * 삭제 이벤트의 순번은 쓰지 않는다. 삭제는 종료 상태라 어떤 이벤트도 이후에 반영되지 않는다.
+     *
+     * 새로 삭제로 표시했으면 [CatalogProductDeleted]를 쌓고 true를 돌려준다. 이미 삭제된 복제본이면 아무것도 바꾸지 않고 false다.
+     */
+    fun markDeleted(occurredAt: Instant): Boolean {
+        if (deleted) return false
+        deleted = true
+        lastEventAt = occurredAt
+        registerEvent(CatalogProductDeleted(productId))
+        return true
     }
 
     companion object {
