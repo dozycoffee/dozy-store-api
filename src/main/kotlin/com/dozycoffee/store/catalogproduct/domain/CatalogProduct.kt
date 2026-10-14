@@ -1,5 +1,6 @@
 package com.dozycoffee.store.catalogproduct.domain
 
+import com.dozycoffee.store.catalogproduct.domain.event.CatalogProductDeleted
 import com.dozycoffee.store.catalogproduct.domain.event.CatalogProductScopeChanged
 import com.dozycoffee.store.core.AggregateRoot
 import com.dozycoffee.store.core.ProductId
@@ -11,19 +12,80 @@ import java.time.Instant
  * 값은 Catalog 이벤트로만 바뀌고 Store의 어떤 요청도 직접 바꾸지 않는다.
  *
  * 처음 복제할 때는 [replicate]로 만들고, 저장소에서 복원할 때는 [reconstitute]로 만든다.
+ * 이벤트는 [apply]로 반영한다. 변경 메서드는 규칙을 모두 확인한 뒤에 값을 바꾸므로, 거부되면 상태가 그대로다.
  */
 class CatalogProduct private constructor(
     val productId: ProductId,
-    val sku: Sku?,
-    val status: CatalogProductStatus,
-    val scope: StoreScope,
+    sku: Sku?,
+    status: CatalogProductStatus,
+    scope: StoreScope,
     val tracksInventory: Boolean,
-    val sequence: Long,
-    val deleted: Boolean,
-    val lastEventAt: Instant,
+    sequence: Long,
+    deleted: Boolean,
+    lastEventAt: Instant,
 ) : AggregateRoot() {
+    var sku: Sku? = sku
+        private set
+
+    var status: CatalogProductStatus = status
+        private set
+
+    var scope: StoreScope = scope
+        private set
+
+    /** 삭제로 표시됐는가. 행을 지우지 않고 표시하며, 한번 true가 되면 바뀌지 않는다. */
+    var deleted: Boolean = deleted
+        private set
+
+    /** 마지막으로 반영한 이벤트의 순번. 이보다 크지 않은 이벤트는 무시한다. */
+    var sequence: Long = sequence
+        private set
+
+    /** 마지막으로 반영한 이벤트의 발생 시각. 기록용이며 순서 기준이 아니다. */
+    var lastEventAt: Instant = lastEventAt
+        private set
+
     init {
         require(sequence >= 0) { "순번은 0 이상이어야 합니다: 상품 $productId, 순번 $sequence" }
+    }
+
+    /**
+     * Catalog 이벤트의 상태 전체를 반영한다(요구사항 3.5, 7.1). 종류와 관계없이 같은 방식이다.
+     *
+     * 순번이 복제본보다 클 때만 상태 전체로 교체한다. 같거나 작으면(오래됐거나 중복) 아무것도 바꾸지 않는다.
+     * 삭제된 복제본은 되살아나지 않으므로 반영하지 않는다.
+     * 반영할 이벤트가 재고 추적 여부를 바꾸면 Catalog의 계약 위반이다(`check`). 이때도 값은 하나도 바뀌지 않는다.
+     * 판매 범위가 이전과 다를 때만 [CatalogProductScopeChanged]를 쌓는다.
+     */
+    fun apply(snapshot: CatalogProductSnapshot): CatalogProductApplyResult {
+        require(snapshot.productId == productId) { "다른 상품의 상태입니다: 복제본 $productId, 스냅샷 ${snapshot.productId}" }
+        if (deleted || snapshot.sequence <= sequence) return CatalogProductApplyResult.NOT_APPLIED
+        check(snapshot.tracksInventory == tracksInventory) {
+            "재고 추적 여부는 바뀔 수 없습니다: 상품 $productId, 복제본 $tracksInventory, 이벤트 ${snapshot.tracksInventory} (Catalog의 계약 위반)"
+        }
+
+        val scopeChanged = snapshot.scope != scope
+        sku = snapshot.sku
+        status = snapshot.status
+        scope = snapshot.scope
+        sequence = snapshot.sequence
+        lastEventAt = snapshot.occurredAt
+        if (scopeChanged) registerEvent(CatalogProductScopeChanged(productId, scope))
+        return CatalogProductApplyResult(applied = true, scopeChanged = scopeChanged)
+    }
+
+    /**
+     * 삭제로 표시한다(요구사항 3.5). 행을 지우지 않는 것은 늦게 도착한 그 상품의 오래된 이벤트로 상품이 되살아나지 않게 하기 위해서다.
+     * 삭제 이벤트의 순번은 쓰지 않는다. 삭제는 종료 상태라 어떤 이벤트도 이후에 반영되지 않는다.
+     *
+     * 새로 삭제로 표시했으면 [CatalogProductDeleted]를 쌓고 true를 돌려준다. 이미 삭제된 복제본이면 아무것도 바꾸지 않고 false다.
+     */
+    fun markDeleted(occurredAt: Instant): Boolean {
+        if (deleted) return false
+        deleted = true
+        lastEventAt = occurredAt
+        registerEvent(CatalogProductDeleted(productId))
+        return true
     }
 
     companion object {
