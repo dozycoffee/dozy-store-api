@@ -1,5 +1,6 @@
 package com.dozycoffee.store.fixture
 
+import com.dozycoffee.store.catalogproduct.application.port.inbound.command.ApplyCatalogProductSnapshotCommand
 import com.dozycoffee.store.catalogproduct.domain.CatalogProduct
 import com.dozycoffee.store.catalogproduct.domain.CatalogProductSnapshot
 import com.dozycoffee.store.catalogproduct.domain.CatalogProductStatus
@@ -30,3 +31,14 @@ fun catalogProduct(
     deleted: Boolean = false,
     lastEventAt: Instant = Instant.parse("2026-10-14T01:00:00Z"),
 ) = CatalogProduct.reconstitute(productId, sku, status, scope, tracksInventory, sequence, deleted, lastEventAt)
+
+/** Catalog 이벤트를 번역한 반영 요청. 기본값은 [snapshot]과 같다. */
+fun applyCommand(
+    productId: ProductId = ProductId(1),
+    sku: Sku? = Sku("DZ-00000001"),
+    status: CatalogProductStatus = CatalogProductStatus.ACTIVE,
+    scope: StoreScope = StoreScope.All,
+    tracksInventory: Boolean = false,
+    sequence: Long = 1,
+    occurredAt: Instant = Instant.parse("2026-10-14T01:00:00Z"),
+) = ApplyCatalogProductSnapshotCommand(productId, sku, status, scope, tracksInventory, sequence, occurredAt)
