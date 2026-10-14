@@ -49,11 +49,15 @@ class CatalogProduct private constructor(
      *
      * 순번이 복제본보다 클 때만 상태 전체로 교체한다. 같거나 작으면(오래됐거나 중복) 아무것도 바꾸지 않는다.
      * 삭제된 복제본은 되살아나지 않으므로 반영하지 않는다.
+     * 반영할 이벤트가 재고 추적 여부를 바꾸면 Catalog의 계약 위반이다(`check`). 이때도 값은 하나도 바뀌지 않는다.
      * 판매 범위가 이전과 다를 때만 [CatalogProductScopeChanged]를 쌓는다.
      */
     fun apply(snapshot: CatalogProductSnapshot): CatalogProductApplyResult {
         require(snapshot.productId == productId) { "다른 상품의 상태입니다: 복제본 $productId, 스냅샷 ${snapshot.productId}" }
         if (deleted || snapshot.sequence <= sequence) return CatalogProductApplyResult.NOT_APPLIED
+        check(snapshot.tracksInventory == tracksInventory) {
+            "재고 추적 여부는 바뀔 수 없습니다: 상품 $productId, 복제본 $tracksInventory, 이벤트 ${snapshot.tracksInventory} (Catalog의 계약 위반)"
+        }
 
         val scopeChanged = snapshot.scope != scope
         sku = snapshot.sku

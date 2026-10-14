@@ -9,6 +9,8 @@ import com.dozycoffee.store.fixture.snapshot
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -273,6 +275,65 @@ class CatalogProductTest {
             assertEquals(CatalogProductStatus.DRAFT, product.status)
             assertEquals(5, product.sequence)
             assertTrue(product.pullDomainEvents().isEmpty())
+        }
+    }
+
+    @Nested
+    @DisplayName("재고 추적 여부 불변")
+    inner class TracksInventoryInvariant {
+        @Test
+        fun `같은 값이면 정상 반영한다`() {
+            val product = catalogProduct(tracksInventory = true, sequence = 1)
+
+            val result = product.apply(snapshot(tracksInventory = true, sequence = 2))
+
+            assertTrue(result.applied)
+            assertTrue(product.tracksInventory)
+        }
+
+        @ParameterizedTest
+        @ValueSource(booleans = [true, false])
+        fun `반영할 이벤트가 값을 바꾸면 거부하고 아무것도 바뀌지 않는다`(tracks: Boolean) {
+            val product = catalogProduct(tracksInventory = tracks, status = CatalogProductStatus.DRAFT, sequence = 1)
+
+            assertFailsWith<IllegalStateException> {
+                product.apply(
+                    snapshot(
+                        tracksInventory = !tracks,
+                        status = CatalogProductStatus.ACTIVE,
+                        scope = StoreScope.Limited(setOf(StoreId(1))),
+                        sequence = 2,
+                        occurredAt = Instant.parse("2026-10-14T05:00:00Z"),
+                    ),
+                )
+            }
+
+            assertEquals(tracks, product.tracksInventory)
+            assertEquals(CatalogProductStatus.DRAFT, product.status)
+            assertEquals(StoreScope.All, product.scope)
+            assertEquals(1, product.sequence)
+            assertEquals(Instant.parse("2026-10-14T01:00:00Z"), product.lastEventAt)
+            assertTrue(product.pullDomainEvents().isEmpty())
+        }
+
+        @Test
+        fun `순번이 크지 않은 이벤트는 값이 달라도 검사하지 않고 무시한다`() {
+            val product = catalogProduct(tracksInventory = false, sequence = 5)
+
+            val older = product.apply(snapshot(tracksInventory = true, sequence = 4))
+            val same = product.apply(snapshot(tracksInventory = true, sequence = 5))
+
+            assertEquals(CatalogProductApplyResult.NOT_APPLIED, older)
+            assertEquals(CatalogProductApplyResult.NOT_APPLIED, same)
+        }
+
+        @Test
+        fun `삭제된 복제본은 값이 달라도 검사하지 않고 무시한다`() {
+            val product = catalogProduct(tracksInventory = false, deleted = true, sequence = 5)
+
+            val result = product.apply(snapshot(tracksInventory = true, sequence = 9))
+
+            assertEquals(CatalogProductApplyResult.NOT_APPLIED, result)
         }
     }
 }
