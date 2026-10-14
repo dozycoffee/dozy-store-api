@@ -20,6 +20,13 @@ interface CatalogProductRepository {
     suspend fun findByIdForShare(productId: ProductId): CatalogProduct?
 
     /**
+     * 여러 상품 행을 `SELECT … FOR SHARE`로 잠그고 읽는다. 상품 ID 순서로 잠그고 돌려주며(여러 행을 잠글 때는 교착을 피하도록 항상 id 순서),
+     * 없는 ID는 결과에서 빠지고 같은 ID가 여러 번 와도 한 번만 돌려준다. 빈 목록이면 빈 결과다.
+     * 진열 순서 일괄 변경처럼 한 번에 여러 상품의 판매 범위를 확인할 때 쓴다.
+     */
+    suspend fun findByIdsForShare(productIds: Collection<ProductId>): List<CatalogProduct>
+
+    /**
      * 상품이 없으면 넣고 `true`를, 같은 상품 ID가 이미 있으면 아무것도 바꾸지 않고 `false`를 돌려준다.
      * 동시에 같은 상품을 넣어도 하나만 `true`다. 이미 있으면 호출한 쪽이 [findByIdForUpdate]로 다시 잠그고 반영한다.
      *
