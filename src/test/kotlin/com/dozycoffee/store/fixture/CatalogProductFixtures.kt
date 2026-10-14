@@ -1,6 +1,7 @@
 package com.dozycoffee.store.fixture
 
 import com.dozycoffee.store.catalogproduct.application.port.inbound.command.ApplyCatalogProductSnapshotCommand
+import com.dozycoffee.store.catalogproduct.application.port.inbound.command.MarkCatalogProductDeletedCommand
 import com.dozycoffee.store.catalogproduct.domain.CatalogProduct
 import com.dozycoffee.store.catalogproduct.domain.CatalogProductSnapshot
 import com.dozycoffee.store.catalogproduct.domain.CatalogProductStatus
@@ -42,3 +43,9 @@ fun applyCommand(
     sequence: Long = 1,
     occurredAt: Instant = Instant.parse("2026-10-14T01:00:00Z"),
 ) = ApplyCatalogProductSnapshotCommand(productId, sku, status, scope, tracksInventory, sequence, occurredAt)
+
+/** Catalog가 알려 온 상품 삭제. */
+fun deleteCommand(
+    productId: ProductId = ProductId(1),
+    occurredAt: Instant = Instant.parse("2026-10-15T03:00:00Z"),
+) = MarkCatalogProductDeletedCommand(productId, occurredAt)

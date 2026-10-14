@@ -1,8 +1,11 @@
 package com.dozycoffee.store.catalogproduct.application.service
 
 import com.dozycoffee.store.catalogproduct.application.port.inbound.ApplyCatalogProductSnapshotUseCase
+import com.dozycoffee.store.catalogproduct.application.port.inbound.MarkCatalogProductDeletedUseCase
 import com.dozycoffee.store.catalogproduct.application.port.inbound.command.ApplyCatalogProductSnapshotCommand
+import com.dozycoffee.store.catalogproduct.application.port.inbound.command.MarkCatalogProductDeletedCommand
 import com.dozycoffee.store.catalogproduct.application.port.inbound.result.ApplyOutcome
+import com.dozycoffee.store.catalogproduct.application.port.inbound.result.DeleteOutcome
 import com.dozycoffee.store.catalogproduct.application.port.outbound.CatalogProductRepository
 import com.dozycoffee.store.catalogproduct.domain.CatalogProduct
 import com.dozycoffee.store.catalogproduct.domain.CatalogProductSnapshot
@@ -19,7 +22,8 @@ class CatalogProductService(
     private val products: CatalogProductRepository,
     private val events: DomainEventDispatcher,
     private val transactions: TransactionRunner,
-) : ApplyCatalogProductSnapshotUseCase {
+) : ApplyCatalogProductSnapshotUseCase,
+    MarkCatalogProductDeletedUseCase {
     override suspend fun apply(command: ApplyCatalogProductSnapshotCommand): ApplyOutcome =
         transactions.inTransaction {
             val snapshot = command.toSnapshot()
@@ -35,6 +39,15 @@ class CatalogProductService(
             // 그냥 끝내면 이 이벤트가 사라지므로, 그 행을 잠그고 일반 경로와 같은 규칙(순번 비교, 교체)으로 반영한다.
             // 복제본은 지우지 않고 삭제 표시만 하므로 다시 읽으면 반드시 있다.
             applyTo(checkNotNull(products.findByIdForUpdate(snapshot.productId)), snapshot)
+        }
+
+    override suspend fun markDeleted(command: MarkCatalogProductDeletedCommand): DeleteOutcome =
+        transactions.inTransaction {
+            val product = products.findByIdForUpdate(command.productId) ?: return@inTransaction DeleteOutcome.UNKNOWN_PRODUCT
+            if (!product.markDeleted(command.occurredAt)) return@inTransaction DeleteOutcome.ALREADY_DELETED
+            products.save(product)
+            events.dispatch(product.pullDomainEvents())
+            DeleteOutcome.DELETED
         }
 
     private suspend fun applyTo(

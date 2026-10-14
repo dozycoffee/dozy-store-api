@@ -1,11 +1,14 @@
 package com.dozycoffee.store.catalogproduct.application.service
 
 import com.dozycoffee.store.catalogproduct.application.port.inbound.ApplyCatalogProductSnapshotUseCase
+import com.dozycoffee.store.catalogproduct.application.port.inbound.MarkCatalogProductDeletedUseCase
 import com.dozycoffee.store.catalogproduct.application.port.inbound.result.ApplyOutcome
+import com.dozycoffee.store.catalogproduct.application.port.inbound.result.DeleteOutcome
 import com.dozycoffee.store.catalogproduct.application.port.outbound.CatalogProductRepository
 import com.dozycoffee.store.catalogproduct.domain.CatalogProduct
 import com.dozycoffee.store.catalogproduct.domain.CatalogProductStatus
 import com.dozycoffee.store.catalogproduct.domain.StoreScope
+import com.dozycoffee.store.catalogproduct.domain.event.CatalogProductDeleted
 import com.dozycoffee.store.catalogproduct.domain.event.CatalogProductScopeChanged
 import com.dozycoffee.store.core.DomainEvent
 import com.dozycoffee.store.core.ProductId
@@ -13,6 +16,7 @@ import com.dozycoffee.store.core.Sku
 import com.dozycoffee.store.core.StoreId
 import com.dozycoffee.store.fixture.applyCommand
 import com.dozycoffee.store.fixture.catalogProduct
+import com.dozycoffee.store.fixture.deleteCommand
 import com.dozycoffee.store.support.ApplicationTest
 import com.dozycoffee.store.support.RecordingDomainEventHandler
 import com.dozycoffee.store.support.WithRecordingDomainEvents
@@ -39,6 +43,9 @@ import kotlin.test.assertTrue
 class CatalogProductServiceTest : ApplicationTest() {
     @Autowired
     private lateinit var useCase: ApplyCatalogProductSnapshotUseCase
+
+    @Autowired
+    private lateinit var deleteUseCase: MarkCatalogProductDeletedUseCase
 
     @Autowired
     private lateinit var products: CatalogProductRepository
@@ -331,6 +338,136 @@ class CatalogProductServiceTest : ApplicationTest() {
                 assertEquals(setOf(2L), targetStoreIds(id), "상품 $id")
             }
             assertEquals(10, count("SELECT count(*) FROM catalog_products"))
+        }
+    }
+
+    @Nested
+    @DisplayName("S5 5 삭제 반영")
+    inner class Delete {
+        private val deletedAt = Instant.parse("2026-10-15T03:00:00Z")
+
+        @Test
+        fun `삭제로 표시하고 삭제 이벤트를 처리한다`() {
+            seed(catalogProduct(productId = ProductId(7), sku = Sku("DZ-00000007"), status = CatalogProductStatus.DRAFT, sequence = 4))
+
+            val outcome = runBlocking { deleteUseCase.markDeleted(deleteCommand(productId = ProductId(7), occurredAt = deletedAt)) }
+
+            assertEquals(DeleteOutcome.DELETED, outcome)
+            val product = stored(7)
+            assertTrue(product?.deleted == true)
+            assertEquals(deletedAt, product?.lastEventAt)
+            assertEquals(4, product?.sequence)
+            assertEquals(listOf<DomainEvent>(CatalogProductDeleted(ProductId(7))), recorder.events)
+        }
+
+        @Test
+        fun `행을 지우지 않고 대상 매장도 그대로 둔다`() {
+            seed(catalogProduct(scope = stores(10, 20)))
+
+            runBlocking { deleteUseCase.markDeleted(deleteCommand()) }
+
+            assertEquals(1, count("SELECT count(*) FROM catalog_products"))
+            assertEquals(setOf(10L, 20L), targetStoreIds())
+        }
+
+        @Test
+        fun `이미 삭제된 복제본이면 아무것도 바꾸지 않는다`() {
+            val first = Instant.parse("2026-10-14T01:00:00Z")
+            seed(catalogProduct(deleted = true, lastEventAt = first))
+
+            val outcome = runBlocking { deleteUseCase.markDeleted(deleteCommand(occurredAt = deletedAt)) }
+
+            assertEquals(DeleteOutcome.ALREADY_DELETED, outcome)
+            assertEquals(first, stored()?.lastEventAt)
+            assertTrue(recorder.events.isEmpty())
+        }
+
+        @Test
+        fun `복제본이 없는 상품의 삭제는 무시하고 아무것도 저장하지 않는다`() {
+            val outcome = runBlocking { deleteUseCase.markDeleted(deleteCommand(productId = ProductId(99))) }
+
+            assertEquals(DeleteOutcome.UNKNOWN_PRODUCT, outcome)
+            assertEquals(0, count("SELECT count(*) FROM catalog_products"))
+            assertTrue(recorder.events.isEmpty())
+        }
+
+        @Test
+        fun `S5 2b 삭제된 뒤에는 이전 순번과 이후 순번의 이벤트 모두 되살리지 못한다`() {
+            seed(catalogProduct(status = CatalogProductStatus.DRAFT, sequence = 5))
+            runBlocking { deleteUseCase.markDeleted(deleteCommand()) }
+            recorder.reset()
+
+            val older = runBlocking { useCase.apply(applyCommand(status = CatalogProductStatus.ACTIVE, sequence = 3)) }
+            val newer = runBlocking { useCase.apply(applyCommand(status = CatalogProductStatus.ACTIVE, scope = stores(1), sequence = 99)) }
+
+            assertEquals(ApplyOutcome.IGNORED, older)
+            assertEquals(ApplyOutcome.IGNORED, newer)
+            val product = stored()
+            assertTrue(product?.deleted == true)
+            assertEquals(CatalogProductStatus.DRAFT, product?.status)
+            assertEquals(5, product?.sequence)
+            assertTrue(recorder.events.isEmpty())
+        }
+
+        @Test
+        fun `처음 복제한 직후에 삭제하면 이벤트가 쌓인 순서대로 처리된다`() {
+            runBlocking {
+                useCase.apply(applyCommand(scope = stores(10)))
+                deleteUseCase.markDeleted(deleteCommand())
+            }
+
+            assertEquals(
+                listOf<DomainEvent>(CatalogProductScopeChanged(ProductId(1), stores(10)), CatalogProductDeleted(ProductId(1))),
+                recorder.events,
+            )
+        }
+
+        @Test
+        fun `핸들러가 실패하면 삭제 표시가 롤백된다`() {
+            seed(catalogProduct(sequence = 5))
+            recorder.failOn = CatalogProductDeleted::class
+
+            assertFailsWith<IllegalStateException> { runBlocking { deleteUseCase.markDeleted(deleteCommand()) } }
+
+            assertEquals(false, stored()?.deleted)
+        }
+
+        @Test
+        fun `삭제와 같은 상품의 이벤트 반영이 동시에 와도 삭제 표시가 남는다`() {
+            val ids = (1L..10L).toList()
+            ids.forEach {
+                seed(
+                    catalogProduct(
+                        productId = ProductId(it),
+                        sku = Sku("DZ-%08d".format(it)),
+                        status = CatalogProductStatus.DRAFT,
+                        sequence = 1,
+                    ),
+                )
+            }
+
+            runBlocking {
+                withTimeout(60_000) {
+                    ids
+                        .flatMap { id ->
+                            listOf(
+                                async(Dispatchers.Default) { deleteUseCase.markDeleted(deleteCommand(productId = ProductId(id))) },
+                                async(Dispatchers.Default) {
+                                    useCase.apply(
+                                        applyCommand(
+                                            productId = ProductId(id),
+                                            sku = Sku("DZ-%08d".format(id)),
+                                            status = CatalogProductStatus.ACTIVE,
+                                            sequence = 2,
+                                        ),
+                                    )
+                                },
+                            )
+                        }.awaitAll()
+                }
+            }
+
+            ids.forEach { id -> assertTrue(stored(id)?.deleted == true, "상품 $id") }
         }
     }
 }
