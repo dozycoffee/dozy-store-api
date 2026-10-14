@@ -1,5 +1,6 @@
 package com.dozycoffee.store.core
 
+import com.dozycoffee.store.catalogproduct.domain.exception.CatalogProductErrorCode
 import com.dozycoffee.store.common.web.toHttpStatus
 import com.dozycoffee.store.management.domain.manager.exception.StoreManagerErrorCode
 import com.dozycoffee.store.management.domain.store.exception.StoreErrorCode
@@ -13,7 +14,7 @@ import kotlin.test.assertTrue
 class ErrorCodeTest {
     /** 새 `<Aggregate>ErrorCode` enum을 만들면 여기에 추가한다. */
     private val allCodes: List<ErrorCode> =
-        CommonErrorCode.entries + StoreErrorCode.entries + StoreManagerErrorCode.entries
+        CommonErrorCode.entries + StoreErrorCode.entries + StoreManagerErrorCode.entries + CatalogProductErrorCode.entries
 
     @Test
     fun `code 문자열은 전체에서 유일하다`() {
