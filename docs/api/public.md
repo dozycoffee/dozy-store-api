@@ -17,7 +17,7 @@
 ## 캐시
 
 - 응답은 공개 데이터라 HTTP 캐시와 CDN에 맡길 수 있다. `Cache-Control: public, max-age=…`를 붙인다. 품절 표시가 그만큼 늦어지므로 짧게 둔다(값은 운영하며 정함).
-- Store는 Catalog의 표시용 상품 정보(이름, 이미지, 가격, 카테고리, 태그, 유효 옵션 구성)를 짧게 캐시해 쓴다. 상품 상태·판매 범위·숨김·품절은 캐시하지 않고 Store의 현재 값으로 판단한다(요구사항 5.2).
+- Store는 Catalog의 표시용 상품 정보(이름, 이미지, 가격, 카테고리 ID, 태그, 유효 옵션 구성)를 짧게 캐시해 쓴다. 상품 상태·판매 범위·숨김·품절은 캐시하지 않고 Store의 현재 값으로 판단한다(요구사항 5.2).
 
 ## 손님용 매장 (`CustomerStore`)
 
@@ -71,23 +71,6 @@
 {
   "storeId": 101,
   "storeStatus": "OPEN",
-  "categories": [
-    {
-      "categoryId": 1,
-      "name": "음료",
-      "children": [
-        { "categoryId": 5, "name": "커피" },
-        { "categoryId": 6, "name": "티" }
-      ]
-    },
-    {
-      "categoryId": 3,
-      "name": "상품",
-      "children": [
-        { "categoryId": 9, "name": "MD" }
-      ]
-    }
-  ],
   "products": [
     {
       "productId": 12,
@@ -116,15 +99,14 @@
 | 필드 | 설명 |
 |---|---|
 | `storeStatus` | 매장 상태. `OPEN`이 아니면 메뉴가 없다 |
-| `categories` | 메뉴에 있는 상품이 속한 카테고리를 대분류 → 소분류 구조로 담는다. 본사가 정한 노출 순서대로다. 상품이 하나도 없는 카테고리는 빠진다. `OPEN`이 아닌 매장이면 `null` |
 | `products` | 노출 판단(4장)을 통과한 상품. 상품 ID 순(본사 등록 순)이고 모든 매장과 채널이 같다. `OPEN`이 아닌 매장이면 `null`(메뉴 없음)이고, 노출할 상품이 하나도 없으면 `[]`다 |
-| `categoryId` | 상품의 소분류. 이름과 대분류는 `categories`에서 찾는다 |
+| `categoryId` | 상품의 소분류 카테고리 ID. 이름·대분류·노출 순서는 Catalog의 공개 카테고리 목록(`GET /api/v1/public/categories`)에서 찾는다 |
 | `tags` | 상품의 마케팅 태그(신메뉴, 시즌한정 등). 없으면 `[]` |
 | `stockStatus` | `ON_SALE`이면 구매 가능, `SOLD_OUT`이면 보이지만 구매 불가 |
 
 - 숨긴 상품, `ACTIVE`가 아닌 상품, 판매 범위 밖 상품은 담지 않는다.
 - **필터 파라미터는 없다.** 매장의 노출 상품 전체를 한 번에 주고, 카테고리 탭·태그 모아 보기·판매중만 보기·이름 검색은 화면이 거른다. 조건마다 캐시가 쪼개지지 않게 하기 위해서다(요구사항 5.2).
-- 카테고리 탭은 `categories`의 순서로 만들고, 탭 안의 상품은 `products`의 순서(본사 등록 순)를 그대로 따른다.
+- 카테고리 탭은 채널이 Catalog의 공개 카테고리 목록의 순서(본사가 정한 노출 순서)로 만들고, 탭 안의 상품은 `products`의 순서(본사 등록 순)를 그대로 따른다. 카테고리 목록은 Catalog가 최대 몇 분 캐시하므로 방금 만든 카테고리의 ID를 가진 상품이 메뉴에 먼저 올 수 있다. 그때는 채널이 카테고리 목록을 다시 받는 등으로 처리한다([ADR-0007](../adr/0007-categories-from-catalog-public-api.md)).
 - 옵션은 담지 않는다. 상품을 고른 뒤 `/menu/{productId}`로 받는다. 메뉴 목록을 가볍게 유지하기 위해서다.
 - 오류: `STORE_NOT_FOUND`(404, 없거나 폐점한 매장), `CATALOG_UNAVAILABLE`(503, 캐시에 없는 상품 정보를 Catalog에서 받지 못함)
 
@@ -137,7 +119,6 @@
   "productId": 12,
   "name": "아이스 아메리카노",
   "categoryId": 5,
-  "categoryName": "커피",
   "imageUrl": "https://cdn.example.com/p/12.png",
   "basePrice": 4500,
   "displayStartingPrice": 4500,
@@ -159,7 +140,7 @@
 }
 ```
 
-- 메뉴 목록의 상품 필드에 `categoryName`과 `groups`를 더한 것이다. 상품 하나만 열어도 화면을 그릴 수 있도록 카테고리 이름을 함께 담는다.
+- 메뉴 목록의 상품 필드에 `groups`를 더한 것이다.
 - `groups`는 Catalog가 계산한 유효 옵션 구성이다. 손님에게는 가격 예외 여부(`priceOverridden`)를 담지 않는다. 손님이 고르는 데 필요 없는 본사 정보다.
 - 매장이 `OPEN`이 아니거나, 그 상품이 이 매장 메뉴에 없으면(숨김, `ACTIVE` 아님, 판매 범위 밖) `PRODUCT_NOT_FOUND`(404)다.
 - 오류: `STORE_NOT_FOUND`(404), `PRODUCT_NOT_FOUND`(404), `CATALOG_UNAVAILABLE`(503)

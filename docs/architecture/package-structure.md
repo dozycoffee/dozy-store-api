@@ -59,7 +59,7 @@ UseCase는 동작마다 인터페이스 하나다. 구현은 `application/servic
 | `catalogproduct` | `ApplyCatalogProductSnapshotUseCase`, `MarkCatalogProductDeletedUseCase`, `SyncCatalogProductsUseCase` | 메시지 컨슈머, 운영 작업 |
 | | `CheckProductSellableUseCase` (이 매장에서 이 상품을 다룰 수 있는지. 상품 행을 `FOR SHARE`로 잠금) | `storeproduct` |
 | | `ListSellableProductsUseCase` (이 매장의 `ACTIVE`·판매 범위 안 상품) | `storeproduct` |
-| | `GetProductDisplayInfoUseCase`, `GetCategoriesUseCase`, `GetEffectiveOptionsUseCase` (Catalog 조회 + 캐시) | `storeproduct`, `menu` |
+| | `GetProductDisplayInfoUseCase`, `GetEffectiveOptionsUseCase` (Catalog 조회 + 캐시) | `storeproduct`, `menu` |
 | `storeproduct` | `ChangeVisibilityUseCase`, `ChangeStockStatusUseCase`, `GetStoreProductsUseCase`, `GetStoreProductOptionsUseCase` | 매니저 API |
 | | `ListVisibleProductsUseCase` (이 매장의 노출 상품과 품절 상태) | `menu` |
 | | `GetExposureCountsUseCase`, `GetExposureByStoreUseCase` | 본사 API |
@@ -97,7 +97,7 @@ UseCase는 동작마다 인터페이스 하나다. 구현은 `application/servic
 
 | 연동 대상 | 방향 | 포트 | 어댑터 |
 |---|---|---|---|
-| Catalog — 표시용 상품 정보, 카테고리 목록, 유효 옵션 구성 | outbound | `catalogproduct.application.port.outbound.CatalogProductInfoPort` | `catalogproduct.adapter.outbound.catalog.CatalogClient` (+ 캐시) |
+| Catalog — 표시용 상품 정보, 유효 옵션 구성 | outbound | `catalogproduct.application.port.outbound.CatalogProductInfoPort` | `catalogproduct.adapter.outbound.catalog.CatalogClient` (+ 캐시) |
 | Catalog — 전체 상품 상태 목록 (복제본 채우기) | outbound | `catalogproduct.application.port.outbound.CatalogProductSnapshotPort` | `catalogproduct.adapter.outbound.catalog` |
 | Catalog — 상품 이벤트 구독 | inbound | `catalogproduct`의 스냅샷 적용·삭제 UseCase | `catalogproduct.adapter.inbound.messaging.CatalogProductEventConsumer` |
 | Catalog → Store — 판매 범위 대상 매장 확인 | inbound | `CheckStoreAssignabilityUseCase` | `management.adapter.inbound.web` (내부 API) |

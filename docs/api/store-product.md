@@ -22,7 +22,6 @@
   "sku": "DZ-00000012",
   "name": "아이스 아메리카노",
   "categoryId": 5,
-  "categoryName": "커피",
   "imageUrl": "https://cdn.example.com/p/12.png",
   "basePrice": 4500,
   "displayStartingPrice": 4500,
@@ -35,7 +34,6 @@
 | 필드 | 출처 | 설명 |
 |---|---|---|
 | `sku`, `name`, `categoryId`, `imageUrl`, `basePrice`, `displayStartingPrice`, `tracksInventory` | Catalog | 표시용 상품 정보. 조회할 때마다 Catalog에서 받는다 |
-| `categoryName` | Catalog | Store가 캐시한 카테고리 목록에서 붙인다 |
 | `visibility` | Store | `VISIBLE` / `HIDDEN`. 개별 설정이 없으면 `VISIBLE` |
 | `stockStatus` | Store | `ON_SALE` / `SOLD_OUT`. 매니저의 수동 품절(없으면 `ON_SALE`). 1단계에서는 재고 추적 상품도 같다(요구사항 3.4). 숨겼어도 값을 준다 |
 
