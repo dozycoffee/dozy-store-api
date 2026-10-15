@@ -24,7 +24,7 @@
 ### 경계
 | ADR | 제목 | 상태 | 날짜 |
 |---|---|---|---|
-| [0001](0001-store-owns-store-product-state.md) | 매장 단위의 상품 상태를 Store가 소유한다 | 채택 | 2026-10-06 |
+| [0001](0001-store-owns-store-product-state.md) | 매장 단위의 상품 상태를 Store가 소유한다 | 일부 대체됨 (매장별 진열 순서 → ADR-0006) | 2026-10-06 |
 
 ### 도메인 모델
 | ADR | 제목 | 상태 | 날짜 |
@@ -32,6 +32,7 @@
 | [0002](0002-minimal-product-replica-with-full-state-events.md) | Catalog 상품은 판단에 필요한 최소 상태만 복제하고, 이벤트는 상태 전체를 담는다 | 채택 | 2026-10-06 |
 | [0003](0003-store-manager-assignment-by-principal-key.md) | 매장 매니저는 직책 없이 (매장, principal key)로 지정하고, Store는 Auth를 호출하지 않는다 | 채택 | 2026-10-06 |
 | [0004](0004-public-customer-menu-for-all-channels.md) | 손님 메뉴는 채널과 관계없이 로그인 없는 공개 리소스 하나로 제공한다 | 채택 | 2026-10-06 |
+| [0006](0006-no-per-store-display-order.md) | 매장별 진열 순서를 두지 않고 메뉴의 상품은 본사 등록 순으로 한다 | 채택 | 2026-10-15 |
 
 ### 아키텍처
 | ADR | 제목 | 상태 | 날짜 |

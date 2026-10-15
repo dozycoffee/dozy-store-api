@@ -18,7 +18,7 @@ base package: `com.dozycoffee.store`
 |---|---|---|---|
 | `management` | 매장, 매장 매니저 지정, 요청 인가, 판매 범위 대상 매장 확인 | `Store`, `StoreManagerAssignment` | 1장, 2장, 7.2 |
 | `catalogproduct` | Catalog 상품 복제본, Catalog 이벤트 반영, 판매 가능 여부 확인, Catalog 표시 정보 조회와 캐시 | `CatalogProduct` | 7.1 |
-| `storeproduct` | 매장별 진열 설정, 수동 품절, 노출 판단, 판매 범위 정리, 매니저 화면, 노출 현황 집계 | `StoreDisplaySetting`, `StoreProductAvailability`, `ProductVisibilityPolicy`, `StoreScopeCleanupPolicy`, `ExposureSummaryPolicy` (2단계: `PendingInventoryEvent`) | 3장, 4장, 5.1, 6장 (2단계: 8장) |
+| `storeproduct` | 매장별 노출 설정, 수동 품절, 노출 판단, 판매 범위 정리, 매니저 화면, 노출 현황 집계 | `StoreDisplaySetting`, `StoreProductAvailability`, `ProductVisibilityPolicy`, `StoreScopeCleanupPolicy`, `ExposureSummaryPolicy` (2단계: `PendingInventoryEvent`) | 3장, 4장, 5.1, 6장 (2단계: 8장) |
 | `menu` | 손님용 매장 정보와 메뉴 (조회 전용) | `CustomerStoreView` | 1.4(손님), 5.2 |
 
 - 노출 현황은 매장별 노출 판단을 세는 일이라 노출 판단을 가진 `storeproduct`에 둔다. 따로 모듈로 두면 노출 판단 정책을 다른 모듈에 내보내야 한다.
@@ -60,7 +60,7 @@ UseCase는 동작마다 인터페이스 하나다. 구현은 `application/servic
 | | `CheckProductSellableUseCase` (이 매장에서 이 상품을 다룰 수 있는지. 상품 행을 `FOR SHARE`로 잠금) | `storeproduct` |
 | | `ListSellableProductsUseCase` (이 매장의 `ACTIVE`·판매 범위 안 상품) | `storeproduct` |
 | | `GetProductDisplayInfoUseCase`, `GetCategoriesUseCase`, `GetEffectiveOptionsUseCase` (Catalog 조회 + 캐시) | `storeproduct`, `menu` |
-| `storeproduct` | `ChangeVisibilityUseCase`, `ReorderDisplayUseCase`, `ChangeStockStatusUseCase`, `GetStoreProductsUseCase`, `GetStoreProductOptionsUseCase` | 매니저 API |
+| `storeproduct` | `ChangeVisibilityUseCase`, `ChangeStockStatusUseCase`, `GetStoreProductsUseCase`, `GetStoreProductOptionsUseCase` | 매니저 API |
 | | `ListVisibleProductsUseCase` (이 매장의 노출 상품과 품절 상태) | `menu` |
 | | `GetExposureCountsUseCase`, `GetExposureByStoreUseCase` | 본사 API |
 | `menu` | `SearchCustomerStoresUseCase`, `GetCustomerStoreUseCase`, `GetMenuUseCase`, `GetMenuProductUseCase` | 손님 API |
@@ -140,7 +140,7 @@ com.dozycoffee.store
 │
 ├── storeproduct/
 │   ├── domain/
-│   │   ├── display/               # StoreDisplaySetting, StoreDisplayOrder, Visibility + exception/
+│   │   ├── display/               # StoreDisplaySetting, Visibility
 │   │   ├── availability/          # StoreProductAvailability, AvailabilitySource, StockStatus + exception/
 │   │   └── (pending/)             # 2단계: PendingInventoryEvent
 │   ├── application/

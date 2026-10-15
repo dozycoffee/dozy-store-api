@@ -8,7 +8,7 @@ Store가 외부에 제공하는 HTTP API의 계약을 다룬다. 규칙 자체�
 |---|---|---|
 | [매장](store.md) | 본사 직원, 매장 매니저 | 매장 등록·수정·상태 전환·목록, 내 매장 목록 |
 | [매장 매니저](manager.md) | 본사 직원 | 매니저 지정·해제·조회 |
-| [매장 상품](store-product.md) | 매장 매니저, 본사 직원 | 매장 상품 목록, 숨김·진열 순서·수동 품절, 유효 옵션 구성 |
+| [매장 상품](store-product.md) | 매장 매니저, 본사 직원 | 매장 상품 목록, 숨김·수동 품절, 유효 옵션 구성 |
 | [노출 현황](exposure.md) | 본사 직원 | 상품별 판매 가능·노출 중 매장 수, 매장별 상세 |
 | [손님](public.md) | 누구나 (로그인 없음) | 손님용 매장 목록·정보(매장 찾기), 매장 메뉴 |
 | [내부](internal.md) | Catalog | 판매 범위 대상 매장 확인 |
@@ -184,7 +184,6 @@ RFC 9457 Problem Details를 쓴다. `Content-Type`은 `application/problem+json`
 | `STORE_MANAGER_NOT_FOUND` | 404 | 해제하려는 매니저 지정이 없음 |
 | `INVALID_MANAGER_PRINCIPAL_TYPE` | 400 | 매니저로 지정할 수 없는 계정 종류(`system`, `customer`) (요구사항 1.3) |
 | `PRODUCT_NOT_FOUND` | 404 | 상품이 없거나 삭제됐거나, 이 매장이 판매 범위에 들지 않음 (요구사항 3.1) |
-| `DUPLICATE_DISPLAY_ORDER_PRODUCT` | 400 | 진열 순서 목록에 같은 상품이 두 번 (요구사항 3.3) |
 | `STOCK_STATUS_NOT_MANUALLY_EDITABLE` | 422 | (2단계) 재고 추적 상품의 수동 품절 변경. 코드만 예약해 둔다 (요구사항 8.2) |
 
 ### 도메인 오류가 아닌 오류

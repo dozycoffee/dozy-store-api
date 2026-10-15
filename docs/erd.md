@@ -74,7 +74,6 @@ erDiagram
         bigint id PK
         bigint store_id FK
         bigint product_id FK
-        integer display_order
         varchar visibility
         timestamptz created_at
         timestamptz updated_at
@@ -190,7 +189,6 @@ erDiagram
 | id | BIGINT | PK, identity | |
 | store_id | BIGINT | FK → stores.id, NOT NULL | |
 | product_id | BIGINT | FK → catalog_products.product_id, NOT NULL | |
-| display_order | INTEGER | NULL 허용 | 1부터. 정하지 않았으면 NULL |
 | visibility | VARCHAR(20) | NOT NULL, 기본 `VISIBLE`, CHECK | |
 | created_at / updated_at | TIMESTAMPTZ | NOT NULL | 행 부재 = 기본값(노출) |
 | 제약 | | `UNIQUE (store_id, product_id)` | |
@@ -257,14 +255,12 @@ FK는 대부분 삭제 제한(`NO ACTION`)으로 둔다. 매장과 복제본 행
 | `catalog_products` 이벤트 반영 | 같은 상품의 이벤트가 동시에 처리되어 오래된 쪽이 나중에 저장됨 | 상품 행 단위로 직렬화한다. 행이 있으면 `SELECT … FOR UPDATE` 후 순번을 비교해 교체, 없으면 `INSERT … ON CONFLICT (product_id) DO NOTHING` 후 다시 잠가 비교한다. 판매 범위 정리와 보관 이벤트 반영을 같은 트랜잭션에서 한다 |
 | 매니저 설정 변경과 판매 범위 정리가 겹침 | 매니저가 옛 판매 범위로 확인하고 저장하는 사이 정리가 끝나, 범위 밖 매장의 설정이 남음 | 매니저 설정 변경은 상품 복제본 행을 `SELECT … FOR SHARE`로 잠근 채 판매 범위를 확인하고 저장한다. 복제본 갱신(`FOR UPDATE`)과 서로 기다리므로, 정리가 먼저면 새 범위로 거부되고 변경이 먼저면 정리에 함께 지워진다 |
 | `store_display_settings` Lazy 생성 | 동시 요청 시 중복 행 | `INSERT … ON CONFLICT (store_id, product_id) DO UPDATE` |
-| `store_display_settings` 노출·진열 순서 변경 | 다른 필드를 바꾸는 요청끼리 옛 값으로 덮어씀 | 바뀐 필드만 UPDATE |
-| `store_display_settings` 진열 순서 일괄 변경 | 같은 매장의 일괄 변경끼리 두 순서가 섞임 | 트랜잭션 시작 직후 매장 단위 권고 잠금 `pg_advisory_xact_lock(1, storeId)`로 직렬화 |
 | (2단계) `store_product_availabilities` 재고 이벤트 반영 | 중복 수신·순서 역전으로 오래된 값이 덮어씀 | `INSERT … ON CONFLICT … DO UPDATE … WHERE last_event_at IS NULL OR excluded.last_event_at > store_product_availabilities.last_event_at` |
 | `store_product_availabilities` 수동 품절 첫 생성 | 동시 요청 시 중복 행 | `INSERT … ON CONFLICT (store_id, product_id) DO UPDATE` |
 | (2단계) `pending_inventory_events` 보관 | 중복 수신·순서 역전 | `INSERT … ON CONFLICT (store_id, sku) DO UPDATE … WHERE excluded.occurred_at > pending_inventory_events.occurred_at` |
 | (2단계) 재고 이벤트 보관과 상품 복제가 겹침 | 재고 이벤트가 복제본을 못 찾고 보관하는 사이 복제가 보관분을 이미 꺼내 가서, 보관 이벤트가 반영되지 않고 남음 | SKU 단위 권고 잠금 `pg_advisory_xact_lock(2, hashtext(sku))`로 직렬화한다. 재고 이벤트 처리는 잠금 뒤 복제본을 찾고, 상품 복제는 잠금 뒤 보관분을 꺼낸다. 해시가 겹치는 SKU끼리는 불필요하게 줄을 설 뿐 결과는 같다 |
 
-권고 잠금의 첫 키는 용도별 네임스페이스다(1 = 매장 진열 순서, 2 = SKU 재고 매칭(2단계)). 2는 미리 예약해 두고 1단계에서는 쓰지 않는다.
+권고 잠금의 첫 키는 용도별 네임스페이스다(2 = SKU 재고 매칭(2단계)). 번호는 용도별로 고정하고 다시 쓰지 않으며, 1은 비어 있다. 2는 미리 예약해 두고 1단계에서는 쓰지 않는다.
 
 ---
 

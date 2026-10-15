@@ -5,7 +5,6 @@
 | 메서드 | 경로 | 설명 | 호출자 |
 |---|---|---|---|
 | GET | `/stores/{storeId}/products` | 매장 상품 목록 | 매니저, `store:admin`, `store:viewer` |
-| PUT | `/stores/{storeId}/products/display-order` | 진열 순서 일괄 변경 | 매니저, `store:admin` |
 | PUT | `/stores/{storeId}/products/{productId}/visibility` | 숨김·노출 전환 | 매니저, `store:admin` |
 | PUT | `/stores/{storeId}/products/{productId}/stock-status` | 수동 품절 설정·해제 (1단계에서는 모든 상품) | 매니저, `store:admin` |
 | GET | `/stores/{storeId}/products/{productId}/effective-options` | 유효 옵션 구성과 표시용 시작가 | 매니저, `store:admin`, `store:viewer` |
@@ -28,7 +27,6 @@
   "basePrice": 4500,
   "displayStartingPrice": 4500,
   "tracksInventory": false,
-  "displayOrder": 1,
   "visibility": "VISIBLE",
   "stockStatus": "ON_SALE"
 }
@@ -38,7 +36,6 @@
 |---|---|---|
 | `sku`, `name`, `categoryId`, `imageUrl`, `basePrice`, `displayStartingPrice`, `tracksInventory` | Catalog | 표시용 상품 정보. 조회할 때마다 Catalog에서 받는다 |
 | `categoryName` | Catalog | Store가 캐시한 카테고리 목록에서 붙인다 |
-| `displayOrder` | Store | 정한 진열 순서(1부터). 정하지 않았으면 `null` |
 | `visibility` | Store | `VISIBLE` / `HIDDEN`. 개별 설정이 없으면 `VISIBLE` |
 | `stockStatus` | Store | `ON_SALE` / `SOLD_OUT`. 매니저의 수동 품절(없으면 `ON_SALE`). 1단계에서는 재고 추적 상품도 같다(요구사항 3.4). 숨겼어도 값을 준다 |
 
@@ -51,22 +48,9 @@
 | `ids` | 상품 ID로 거른다 |
 
 - 응답: `StoreProduct` 배열. 페이징하지 않는다.
-- 정렬: 진열 순서를 정한 상품이 앞에 오름차순, 정하지 않은 상품은 뒤에 상품 ID 순(본사 등록 순, 요구사항 3.3)
-- 매장 상태와 관계없이 조회된다. 개점 준비·휴업 중에도 진열을 준비할 수 있고, 폐점한 매장은 읽기 전용으로 본다(요구사항 1.4).
+- 정렬: 상품 ID 순(본사 등록 순, 요구사항 3.3). 매장마다 순서가 다르지 않다.
+- 매장 상태와 관계없이 조회된다. 개점 준비·휴업 중에도 노출 설정을 준비할 수 있고, 폐점한 매장은 읽기 전용으로 본다(요구사항 1.4).
 - 오류: `STORE_NOT_FOUND`(404), `CATALOG_UNAVAILABLE`(503)
-
-## PUT `/stores/{storeId}/products/display-order` — 진열 순서 일괄 변경 (요구사항 3.3)
-
-매니저가 화면에서 순서를 완성한 뒤 최종 순서 전체를 한 번에 보낸다.
-
-```json
-{ "productIds": [15, 12, 20] }
-```
-
-- 목록의 상품은 그 순서대로 1부터 번호를 받고, 목록에 없는 상품은 순서를 정하지 않은 상품이 된다.
-- 요청 전체가 한 번에 반영된다.
-- 응답: 바꾼 결과의 `StoreSetting` 배열(아래)
-- 오류: `STORE_NOT_FOUND`(404), `STORE_CLOSED`(409), `PRODUCT_NOT_FOUND`(404, 이 매장에서 판매할 수 없는 상품이 하나라도 있음), `DUPLICATE_DISPLAY_ORDER_PRODUCT`(400)
 
 ## PUT `/stores/{storeId}/products/{productId}/visibility` — 숨김·노출 전환 (요구사항 3.2)
 
@@ -92,10 +76,10 @@
 
 ### 변경 응답 (`StoreSetting`)
 
-변경 요청은 Store의 설정만 돌려준다. Catalog를 부르지 않으므로, Catalog가 응답하지 않아도 진열·숨김·품절 변경은 된다. 표시용 정보가 필요하면 목록을 다시 조회한다.
+변경 요청은 Store의 설정만 돌려준다. Catalog를 부르지 않으므로, Catalog가 응답하지 않아도 숨김·품절 변경은 된다. 표시용 정보가 필요하면 목록을 다시 조회한다.
 
 ```json
-{ "productId": 12, "displayOrder": 1, "visibility": "HIDDEN", "stockStatus": "ON_SALE" }
+{ "productId": 12, "visibility": "HIDDEN", "stockStatus": "ON_SALE" }
 ```
 
 ## GET `/stores/{storeId}/products/{productId}/effective-options` — 유효 옵션 구성 (요구사항 5.1)
