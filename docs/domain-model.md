@@ -57,7 +57,7 @@ flowchart LR
 | Store | 본사 | 매장 정보, 매장 코드, 영업 상태 전이, 개점일·폐점일 | `StoreCode`(VO), `Address`(VO) |
 | StoreManagerAssignment | 본사 | (매장, 계정) 한 쌍의 매니저 지정 | `PrincipalKey`(인증 라이브러리의 공유 타입) |
 | CatalogProduct | Catalog 이벤트 | Catalog 상품의 상태 복제본. 순번으로 오래된 이벤트를 거르고, 삭제 사실을 남긴다 | `StoreScope`(VO) |
-| StoreDisplaySetting | 매니저 | 매장별 노출·숨김, 진열 순서. 처음 바꿀 때 생성(Lazy) | `StoreDisplayOrder`(VO, 매장 전체의 진열 순서) |
+| StoreDisplaySetting | 매니저 | 매장별 노출·숨김. 처음 바꿀 때 생성(Lazy) | — |
 | StoreProductAvailability | 매니저 (2단계에서 재고 추적 상품은 재고 이벤트) | 매장별 판매중/품절. 처음 바뀔 때 생성 | `AvailabilitySource`(OWNER, 2단계에서 INVENTORY) |
 | PendingInventoryEvent **(2단계)** | 재고 이벤트 | 복제본에 아직 없는 SKU의 재고 이벤트. (매장, SKU)마다 가장 늦게 발생한 것 하나 | — |
 
@@ -82,15 +82,14 @@ flowchart LR
 | 개점 예정일 | 즉시 반영, `Preparing`에서만 | 매장 관리 권한 |
 | 매장 상태 | 전용 액션 open/suspend/resume/close만. 즉시 반영만(예약 없음) | 매장 관리 권한 |
 | 매니저 지정·해제 | 즉시 반영 | 매장 관리 권한 |
-| 노출·숨김, 진열 순서, 수동 품절 | 즉시 반영 | 매니저, 매장 관리 권한 |
+| 노출·숨김, 수동 품절 | 즉시 반영 | 매니저, 매장 관리 권한 |
 | 상품 복제본 | Catalog 상품 이벤트, 복제본 다시 맞추기 | 시스템 |
 | 재고 상태(`INVENTORY`, 2단계) | 재고 이벤트 | 시스템 |
 
 ### 모델링 메커니즘
 
 - **매장 상태 전용 액션**: 상태는 일반 정보 수정으로 바꿀 수 없다. 허용된 전이만 가능하고, 개점과 폐점은 그날을 개점일·폐점일로 기록한다(요구사항 1.2).
-- **Lazy 생성**: StoreDisplaySetting은 노출·진열 순서를 처음 바꿀 때, StoreProductAvailability는 첫 수동 품절이나 첫 재고 이벤트 때 생긴다. 행이 없으면 기본값으로 판단한다(진열: 노출, 판매 가능 여부: 출처별 기본값).
-- **진열 순서 일괄 변경**: 매장 전체의 순서(`StoreDisplayOrder`)로 한 번에 바꾼다. 목록의 상품은 1부터 번호를 받고, 목록에 없는 이 매장의 설정은 순서를 비운다. 같은 매장의 일괄 변경끼리는 매장 단위로 직렬화한다.
+- **Lazy 생성**: StoreDisplaySetting은 노출 여부를 처음 바꿀 때, StoreProductAvailability는 첫 수동 품절이나 첫 재고 이벤트 때 생긴다. 행이 없으면 기본값으로 판단한다(진열 설정: 노출, 판매 가능 여부: 출처별 기본값).
 - **판매 가능 여부와 출처**: **1단계에서는 모든 상품의 출처가 `OWNER`(매니저 수동)다.** 재고 추적 상품도 같다(요구사항 3.4). 출처 구분은 2단계를 위해 남겨 둔다. 2단계에서는 출처가 CatalogProduct의 재고 추적 여부로 정해지고, `INVENTORY`는 재고 이벤트로만 바뀌며 상품 상태·판매 범위·매장 상태와 무관하게 항상 반영하고 판매 범위에서 빠져도 지우지 않는다. 전환 때 재고 추적 상품의 `OWNER` 행은 정리한다(요구사항 8.3).
 - **상품 복제본 갱신**: 이벤트는 상품 상태 전체와 상품별 순번을 담는다(요구사항 7.1). `CatalogProduct.apply(snapshot)`은 순번이 복제본보다 클 때만 상태 전체를 교체하고, 반영했는지와 판매 범위가 바뀌었는지를 돌려준다. 순번이 같거나 작으면 아무것도 바꾸지 않는다. 처음 보는 상품이면 새로 만든다.
 - **삭제 표시**: 삭제 이벤트를 받으면 행을 지우지 않고 삭제로 표시한다. 삭제된 복제본은 이후 어떤 이벤트로도 되살아나지 않는다. 노출 판단, 매니저 목록, 재고 이벤트 매칭은 삭제된 상품을 없는 것으로 본다. 그 상품의 매장 데이터(진열 설정, 판매 가능 여부, 보관 재고 이벤트)는 삭제를 반영할 때 함께 지운다. 복제본이 없는 상품의 삭제 이벤트는 무시한다(`MarkCatalogProductDeletedUseCase`가 `UNKNOWN_PRODUCT`로 돌려준다). 삭제 이벤트에는 `catalog_products`의 NOT NULL 컬럼(상태, 판매 범위, 순번)을 채울 값이 없어 삭제 표시 행을 만들 수 없다.
@@ -111,7 +110,6 @@ flowchart LR
 | Store | 개점하면 개점일이 그날로, 폐점하면 폐점일이 그날로 정해진다 | — (메서드가 기록) |
 | Store, Address | 매장명·전화번호와 주소 항목은 비어 있지 않고 길이 제한(요구사항 1.1)을 지킨다. 상세 주소는 없거나 비어 있지 않다 | `IllegalArgumentException`(`require`). web이 요청 오류(400)로 먼저 거른다 |
 | Store | 매장명은 앞뒤 공백이 없다. 이름 유일 규칙(요구사항 1.1)이 공백 차이로 무력해지지 않게 한다 | `IllegalArgumentException`(`require`). web이 공백을 제거해서 넘긴다 |
-| StoreDisplayOrder | 진열 순서 목록에 같은 상품은 한 번만 들어간다 | `DuplicateDisplayOrderProductException` |
 | StoreProductAvailability (2단계) | `INVENTORY` 출처의 품절 상태는 매니저가 바꿀 수 없다 | `StockStatusNotManuallyEditableException` |
 | StoreProductAvailability (2단계) | `OWNER` 출처에는 재고 이벤트를 반영할 수 없다 | `InventoryEventNotApplicableException` |
 | StoreProductAvailability (2단계) | 이미 반영한 것보다 오래되었거나 같은 시각의 재고 이벤트는 무시한다 | — (반영 여부를 반환) |
@@ -136,7 +134,7 @@ flowchart LR
 | 매장 코드는 등록 시점에 시스템이 부여 (요구사항 1.1) | 전용 시퀀스 | 매장 등록 유스케이스가 `StoreCodeGenerator`로 발급  |
 | 요청자가 그 매장을 다룰 수 있는가 (요구사항 2장) | 토큰의 Store 역할과 principal key, 매니저 지정 | 매장 관리 역할은 모든 매장 읽기·쓰기, 본사 조회 역할은 모든 매장 읽기, 그 밖에는 토큰의 principal key와 같은 매니저 지정이 있어야 한다. 아니면 거부 |
 | 설정 변경은 폐점하지 않은 매장에서만 (요구사항 3.1) | Store 상태 | application이 Store를 불러 확인, 폐점이면 거부(`StoreClosedException`) |
-| 설정 변경은 판매 범위에 든 상품만 (요구사항 3.1) | CatalogProduct | `StoreScope.covers(storeId)`로 확인. 없거나 삭제됐거나 범위 밖이면 `ProductNotFoundException`. 진열 순서 일괄 변경은 목록의 상품을 모두 확인해 하나라도 어긋나면 전체를 거부한다 |
+| 설정 변경은 판매 범위에 든 상품만 (요구사항 3.1) | CatalogProduct | `StoreScope.covers(storeId)`로 확인. 없거나 삭제됐거나 범위 밖이면 `ProductNotFoundException` |
 | 판매 가능 여부의 출처 | — | 1단계에서는 항상 `OWNER`로 만든다. 2단계에서 `AvailabilitySource.of(tracksInventory)`로 바꾼다 |
 | 이미 그 매장의 매니저인 계정은 다시 지정할 수 없다 (요구사항 1.3) | 기존 매니저 지정 | application이 확인하고 거부(`StoreManagerAlreadyAssignedException`). DB PK로 이중 보장 |
 | 폐점한 매장에는 매니저를 새로 지정할 수 없다 (요구사항 1.3) | Store 상태 | application이 Store를 불러 확인, 폐점이면 거부(`StoreClosedException`). 해제는 폐점한 매장에서도 할 수 있다 |
@@ -185,7 +183,6 @@ stateDiagram-v2
 ### StoreDisplaySetting, StoreProductAvailability
 
 - `visibility`(VISIBLE ⇄ HIDDEN): 매니저가 자유롭게 전환한다.
-- `displayOrder`(1부터 또는 없음): 매장 전체의 진열 순서 일괄 변경으로만 바뀐다.
 - `OWNER`: 처음(행 없음) 판매중. 매니저가 `ON_SALE ⇄ SOLD_OUT`으로 전환한다. 1단계에서는 모든 상품이 이 출처다.
 - `INVENTORY` (2단계): 처음(행 없음) 품절. 재고 생김 → `ON_SALE`, 재고 없음 → `SOLD_OUT`. 상품 상태, 판매 범위, 매장 상태와 무관하게 계속 일어난다.
 
@@ -222,6 +219,7 @@ Store 안에서는 애그리거트가 쌓아 둔 이벤트를 저장 후 꺼내 
 | Catalog 상품은 판단에 필요한 최소 상태만 복제하고, 이벤트는 상태 전체를 담는다 | [ADR-0002](adr/0002-minimal-product-replica-with-full-state-events.md) | CatalogProduct, 모델링 메커니즘 |
 | 매니저 지정은 직책 없이 (매장, principal key)로 두고, Store는 Auth를 호출하지 않는다 | [ADR-0003](adr/0003-store-manager-assignment-by-principal-key.md) | StoreManagerAssignment, 인가 |
 | 손님 메뉴는 채널과 관계없이 로그인 없는 공개 리소스 하나로 제공한다 | [ADR-0004](adr/0004-public-customer-menu-for-all-channels.md) | `CustomerStoreView`, 표시용 정보 캐시 |
+| 매장별로 상품의 진열 순서를 두지 않는다. 메뉴의 상품은 모든 매장과 채널에서 본사 등록 순이다 | [ADR-0006](adr/0006-no-per-store-display-order.md) | 모델링 메커니즘 |
 | 진열 설정과 판매 가능 여부를 나눈다. 판매 범위에서 빠질 때 매니저 값은 지우고 재고 값(2단계)은 남기는 등 수명이 다르기 때문이다 | 이 문서 | 애그리거트 지도, 모델링 메커니즘 |
 | 단종·재활성화 때 매장 설정을 바꾸지 않는다. 재활성화되면 단종 전 설정을 그대로 쓴다 | 요구사항 3.5 | 상태 전이, 도메인 이벤트 |
 
@@ -253,7 +251,7 @@ Store 안에서는 애그리거트가 쌓아 둔 이벤트를 저장 후 꺼내 
 | 상품 복제본 | `CatalogProduct` | Catalog 상품 중 노출 판단에 필요한 값만 비춘 것 |
 | 순번 | `CatalogProduct.sequence` | Catalog가 상품별로 매기는 이벤트 순서. 오래된 이벤트를 거르는 기준 |
 | 보관 재고 이벤트 (2단계) | `PendingInventoryEvent` | 상품이 복제되기 전에 도착한 재고 이벤트 |
-| 매장 개별 설정 | `StoreDisplaySetting` | 매장별 노출·진열 순서. 없으면 기본값(노출) |
+| 매장 개별 설정 | `StoreDisplaySetting` | 매장별 노출·숨김. 없으면 기본값(노출) |
 | 판매 가능 여부 | `StoreProductAvailability` | 매장별 판매중/품절. 없으면 출처별 기본값 |
 | 노출 판단 | `ProductVisibilityPolicy` | 요구사항 4장의 0~4단계 판단 |
 | 비노출 이유 | `StoreVisibility.NotVisible.reason` | 노출 판단에서 걸린 단계 |
