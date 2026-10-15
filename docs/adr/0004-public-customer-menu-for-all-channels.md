@@ -1,6 +1,6 @@
 # ADR-0004: 손님 메뉴는 채널과 관계없이 로그인 없는 공개 리소스 하나로 제공한다
 
-- **상태**: 채택
+- **상태**: 일부 대체됨 (메뉴의 카테고리 구조 → [ADR-0007](0007-categories-from-catalog-public-api.md))
 - **날짜**: 2026-10-06
 - **관련**: [요구사항](../requirements.md) 1.4, 4장, 5.2, [시나리오](../scenarios.md) S8, [API](../api/public.md), [ADR-0002](0002-minimal-product-replica-with-full-state-events.md)(표시용 정보는 조회)
 
