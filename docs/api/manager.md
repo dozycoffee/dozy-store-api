@@ -51,7 +51,7 @@
 
 `principalKey`는 Auth의 `sub` 형식(`partner:0199a3c4-7b2e-7c1a-9f3d-2b6e8a1c4d5f`)이다.
 
-- 매장의 개별 설정(진열·노출·수동 품절)은 바뀌지 않는다.
+- 매장의 개별 설정(노출·수동 품절)은 바뀌지 않는다.
 - 응답: `204 No Content`
 - 오류: `STORE_NOT_FOUND`(404), `STORE_MANAGER_NOT_FOUND`(404)
 - `principalKey`의 형식이 틀리면 `INVALID_REQUEST`(400)다. 형식이 맞으면 계정 종류와 관계없이 해당 지정을 찾고, 없으면 `STORE_MANAGER_NOT_FOUND`다. `system`처럼 저장될 수 없는 종류의 키도 마찬가지다.
