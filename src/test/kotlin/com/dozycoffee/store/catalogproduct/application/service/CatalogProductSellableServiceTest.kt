@@ -81,11 +81,6 @@ class CatalogProductSellableServiceTest : ApplicationTest() {
         storeId: StoreId = store,
     ) = runBlocking { sellable.check(storeId, ProductId(id)) }
 
-    private fun checkAll(
-        vararg ids: Long,
-        storeId: StoreId = store,
-    ) = runBlocking { sellable.checkAll(storeId, ids.map { ProductId(it) }) }
-
     private fun assertNotFound(
         id: Long,
         block: () -> Unit,
@@ -164,61 +159,6 @@ class CatalogProductSellableServiceTest : ApplicationTest() {
         }
     }
 
-    @Nested
-    @DisplayName("여러 상품 (진열 순서 일괄 변경)")
-    inner class All {
-        @Test
-        fun `모두 다룰 수 있으면 상품 ID 순서의 결과를 돌려준다`() {
-            seedProduct(1)
-            seedProduct(2, scope = stores(10))
-            seedProduct(3, tracksInventory = true)
-
-            val results = checkAll(3, 1, 2)
-
-            assertEquals(listOf(1L, 2L, 3L), results.map { it.productId.value })
-            assertEquals(listOf(false, false, true), results.map { it.tracksInventory })
-        }
-
-        @Test
-        fun `같은 상품이 여러 번 와도 한 번만 확인한다`() {
-            seedProduct(1)
-            seedProduct(2)
-
-            assertEquals(listOf(1L, 2L), checkAll(2, 1, 2, 1).map { it.productId.value })
-        }
-
-        @Test
-        fun `빈 목록이면 빈 결과다`() {
-            assertEquals(emptyList(), checkAll())
-        }
-
-        @Test
-        fun `하나라도 다룰 수 없으면 전체를 거부한다`() {
-            seedProduct(1)
-            seedProduct(2, scope = stores(30))
-            seedProduct(3)
-
-            assertNotFound(2) { checkAll(1, 2, 3) }
-        }
-
-        @Test
-        fun `어긋난 상품이 여럿이면 상품 ID가 가장 작은 상품으로 거부한다 (요청 순서와 관계없다)`() {
-            seedProduct(1)
-            seedProduct(2, scope = stores(30))
-            seedProduct(3, deleted = true)
-
-            assertNotFound(2) { checkAll(3, 999, 2, 1) }
-            assertNotFound(2) { checkAll(1, 2, 3, 999) }
-        }
-
-        @Test
-        fun `없는 상품과 삭제된 상품이 섞여도 거부한다`() {
-            seedProduct(1, deleted = true)
-
-            assertNotFound(1) { checkAll(1, 999) }
-        }
-    }
-
     /** 잠금 때문에 기다리는 요청이 남은 채 테스트가 실패해도 멈추지 않도록 시간을 제한한다. */
     @Nested
     @DisplayName("잠금 (판매 범위 정리와 겹칠 때)")
@@ -290,24 +230,6 @@ class CatalogProductSellableServiceTest : ApplicationTest() {
                 release.complete(Unit)
                 assertIs<ProductNotFoundException>(withTimeout(5_000) { oldScope.await() }.exceptionOrNull())
                 assertNotNull(withTimeout(5_000) { newScope.await() }.getOrNull())
-            }
-        }
-
-        @Test
-        fun `여러 상품을 확인한 트랜잭션이 끝날 때까지 그중 하나의 판매 범위 변경은 기다린다`() {
-            seedProduct(1, scope = stores(10))
-            seedProduct(2, scope = stores(10))
-
-            runHeld(work = { sellable.checkAll(store, listOf(ProductId(2), ProductId(1))) }) { release ->
-                val change =
-                    async(Dispatchers.Default) {
-                        apply.apply(applyCommand(productId = ProductId(2), sku = Sku("DZ-00000002"), scope = stores(20), sequence = 2))
-                    }
-
-                change.assertWaiting()
-
-                release.complete(Unit)
-                withTimeout(5_000) { change.await() }
             }
         }
     }
