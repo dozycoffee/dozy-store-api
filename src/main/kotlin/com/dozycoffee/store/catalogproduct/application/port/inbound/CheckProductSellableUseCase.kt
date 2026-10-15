@@ -5,7 +5,7 @@ import com.dozycoffee.store.core.ProductId
 import com.dozycoffee.store.core.StoreId
 
 /**
- * 이 매장에서 상품을 다룰 수 있는지 확인한다(요구사항 3.1). 매니저가 진열 순서·노출 여부·수동 품절을 바꾸기 전에 쓴다.
+ * 이 매장에서 상품을 다룰 수 있는지 확인한다(요구사항 3.1). 매니저가 노출 여부·수동 품절을 바꾸기 전에 쓴다.
  *
  * - 다룰 수 있는 상품은 삭제되지 않았고 판매 범위가 이 매장을 포함한다. 상품 상태는 보지 않는다. `Draft`·`Discontinued`여도 판매 범위에 있으면
  *   다룰 수 있고, 미리 바꿔 둔 설정은 활성화된 뒤에 그대로 쓰인다.
@@ -21,13 +21,4 @@ interface CheckProductSellableUseCase {
         storeId: StoreId,
         productId: ProductId,
     ): SellableProductResult
-
-    /**
-     * 여러 상품을 한 번에 확인한다. 하나라도 다룰 수 없으면 전체를 거부하고, 상품 ID가 가장 작은 어긋난 상품으로 `ProductNotFoundException`을
-     * 던진다. 상품 ID 순서로 잠그고(교착 방지) 결과도 그 순서다. 같은 ID가 여러 번 와도 한 번만 확인하고, 빈 목록이면 빈 결과다.
-     */
-    suspend fun checkAll(
-        storeId: StoreId,
-        productIds: Collection<ProductId>,
-    ): List<SellableProductResult>
 }

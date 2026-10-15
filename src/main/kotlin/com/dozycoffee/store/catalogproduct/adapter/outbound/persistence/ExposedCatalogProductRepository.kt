@@ -74,18 +74,6 @@ class ExposedCatalogProductRepository : CatalogProductRepository {
         insertTargets(product)
     }
 
-    override suspend fun findByIdsForShare(productIds: Collection<ProductId>): List<CatalogProduct> {
-        if (productIds.isEmpty()) return emptyList()
-        val rows =
-            CatalogProductsTable
-                .selectAll()
-                .where { CatalogProductsTable.productId inList productIds.map { it.value }.distinct() }
-                .orderBy(CatalogProductsTable.productId to SortOrder.ASC)
-                .forUpdate(ForUpdateOption.PostgreSQL.ForShare())
-                .toList()
-        return toProducts(rows)
-    }
-
     override suspend fun findActiveProductsCoveringStore(storeId: StoreId): List<SellableProductSummary> =
         CatalogProductsTable
             .select(CatalogProductsTable.productId, CatalogProductsTable.tracksInventory)

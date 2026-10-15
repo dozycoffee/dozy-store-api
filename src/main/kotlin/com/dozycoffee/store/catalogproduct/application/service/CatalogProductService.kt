@@ -66,16 +66,6 @@ class CatalogProductService(
             sellable(storeId, productId, products.findByIdForShare(productId))
         }
 
-    override suspend fun checkAll(
-        storeId: StoreId,
-        productIds: Collection<ProductId>,
-    ): List<SellableProductResult> =
-        transactions.inTransaction {
-            val ids = productIds.distinct().sortedBy { it.value }
-            val found = products.findByIdsForShare(ids).associateBy { it.productId }
-            ids.map { sellable(storeId, it, found[it]) }
-        }
-
     override suspend fun list(storeId: StoreId): List<SellableProductResult> =
         transactions.inTransaction {
             products.findActiveProductsCoveringStore(storeId).map { SellableProductResult(it.productId, it.tracksInventory) }
