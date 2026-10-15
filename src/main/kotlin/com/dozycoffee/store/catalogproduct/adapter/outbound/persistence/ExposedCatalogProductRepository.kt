@@ -1,18 +1,24 @@
 package com.dozycoffee.store.catalogproduct.adapter.outbound.persistence
 
 import com.dozycoffee.store.catalogproduct.application.port.outbound.CatalogProductRepository
+import com.dozycoffee.store.catalogproduct.application.port.outbound.SellableProductSummary
 import com.dozycoffee.store.catalogproduct.domain.CatalogProduct
+import com.dozycoffee.store.catalogproduct.domain.CatalogProductStatus
 import com.dozycoffee.store.catalogproduct.domain.StoreScope
 import com.dozycoffee.store.common.exposed.dbNow
 import com.dozycoffee.store.core.ProductId
 import com.dozycoffee.store.core.Sku
 import com.dozycoffee.store.core.StoreId
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SortOrder
+import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.core.exists
 import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.core.vendors.ForUpdateOption
 import org.jetbrains.exposed.v1.r2dbc.batchInsert
 import org.jetbrains.exposed.v1.r2dbc.deleteWhere
@@ -79,6 +85,25 @@ class ExposedCatalogProductRepository : CatalogProductRepository {
                 .toList()
         return toProducts(rows)
     }
+
+    override suspend fun findActiveProductsCoveringStore(storeId: StoreId): List<SellableProductSummary> =
+        CatalogProductsTable
+            .select(CatalogProductsTable.productId, CatalogProductsTable.tracksInventory)
+            .where {
+                (CatalogProductsTable.status eq CatalogProductStatus.ACTIVE) and
+                    (CatalogProductsTable.deleted eq false) and
+                    (
+                        (CatalogProductsTable.storeScope eq StoreScopeKind.ALL) or
+                            exists(
+                                CatalogProductTargetStoresTable.selectAll().where {
+                                    (CatalogProductTargetStoresTable.productId eq CatalogProductsTable.productId) and
+                                        (CatalogProductTargetStoresTable.storeId eq storeId.value)
+                                },
+                            )
+                    )
+            }.orderBy(CatalogProductsTable.productId to SortOrder.ASC)
+            .map { SellableProductSummary(ProductId(it[CatalogProductsTable.productId]), it[CatalogProductsTable.tracksInventory]) }
+            .toList()
 
     private suspend fun find(
         productId: ProductId,

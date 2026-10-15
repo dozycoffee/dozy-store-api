@@ -2,6 +2,7 @@ package com.dozycoffee.store.catalogproduct.application.service
 
 import com.dozycoffee.store.catalogproduct.application.port.inbound.ApplyCatalogProductSnapshotUseCase
 import com.dozycoffee.store.catalogproduct.application.port.inbound.CheckProductSellableUseCase
+import com.dozycoffee.store.catalogproduct.application.port.inbound.ListSellableProductsUseCase
 import com.dozycoffee.store.catalogproduct.application.port.inbound.MarkCatalogProductDeletedUseCase
 import com.dozycoffee.store.catalogproduct.application.port.inbound.command.ApplyCatalogProductSnapshotCommand
 import com.dozycoffee.store.catalogproduct.application.port.inbound.command.MarkCatalogProductDeletedCommand
@@ -29,7 +30,8 @@ class CatalogProductService(
     private val transactions: TransactionRunner,
 ) : ApplyCatalogProductSnapshotUseCase,
     MarkCatalogProductDeletedUseCase,
-    CheckProductSellableUseCase {
+    CheckProductSellableUseCase,
+    ListSellableProductsUseCase {
     override suspend fun apply(command: ApplyCatalogProductSnapshotCommand): ApplyOutcome =
         transactions.inTransaction {
             val snapshot = command.toSnapshot()
@@ -72,6 +74,11 @@ class CatalogProductService(
             val ids = productIds.distinct().sortedBy { it.value }
             val found = products.findByIdsForShare(ids).associateBy { it.productId }
             ids.map { sellable(storeId, it, found[it]) }
+        }
+
+    override suspend fun list(storeId: StoreId): List<SellableProductResult> =
+        transactions.inTransaction {
+            products.findActiveProductsCoveringStore(storeId).map { SellableProductResult(it.productId, it.tracksInventory) }
         }
 
     /** 삭제되지 않았고 판매 범위가 이 매장을 포함하면 다룰 수 있다. 없는 상품, 삭제된 상품, 범위 밖의 상품은 구분하지 않고 거부한다. */

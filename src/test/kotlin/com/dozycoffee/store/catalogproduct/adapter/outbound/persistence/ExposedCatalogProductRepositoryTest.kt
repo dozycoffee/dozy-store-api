@@ -1,6 +1,7 @@
 package com.dozycoffee.store.catalogproduct.adapter.outbound.persistence
 
 import com.dozycoffee.store.catalogproduct.application.port.outbound.CatalogProductRepository
+import com.dozycoffee.store.catalogproduct.application.port.outbound.SellableProductSummary
 import com.dozycoffee.store.catalogproduct.domain.CatalogProduct
 import com.dozycoffee.store.catalogproduct.domain.CatalogProductStatus
 import com.dozycoffee.store.catalogproduct.domain.StoreScope
@@ -396,6 +397,132 @@ class ExposedCatalogProductRepositoryTest : ApplicationTest() {
             insert(catalogProduct(deleted = true))
 
             assertEquals(true, findAll(1).single().deleted)
+        }
+    }
+
+    @Nested
+    @DisplayName("findActiveProductsCoveringStore")
+    inner class FindActiveProductsCoveringStore {
+        private val store = StoreId(10)
+
+        private fun listed(storeId: StoreId = store) = tx { repository.findActiveProductsCoveringStore(storeId) }
+
+        private fun ids(storeId: StoreId = store) = listed(storeId).map { it.productId.value }
+
+        private fun seedProduct(
+            id: Long,
+            scope: StoreScope = StoreScope.All,
+            status: CatalogProductStatus = CatalogProductStatus.ACTIVE,
+            deleted: Boolean = false,
+            tracksInventory: Boolean = false,
+        ) = insert(
+            catalogProduct(
+                productId = ProductId(id),
+                sku = Sku("DZ-%08d".format(id)),
+                scope = scope,
+                status = status,
+                deleted = deleted,
+                tracksInventory = tracksInventory,
+            ),
+        )
+
+        @Test
+        fun `모든 매장 판매 상품과 이 매장이 대상인 한정 상품을 고른다`() {
+            seedProduct(1, scope = StoreScope.All)
+            seedProduct(2, scope = stores(10, 20))
+            seedProduct(3, scope = stores(20))
+
+            assertEquals(listOf(1L, 2L), ids())
+        }
+
+        @Test
+        fun `한정 상품의 대상이 아닌 매장은 고르지 않는다 (빈 한정 포함)`() {
+            seedProduct(1, scope = stores(20))
+            seedProduct(2, scope = StoreScope.Limited(emptySet()))
+
+            assertEquals(emptyList(), ids())
+        }
+
+        @Test
+        fun `ACTIVE가 아닌 상품과 삭제된 상품은 고르지 않는다`() {
+            seedProduct(1, status = CatalogProductStatus.DRAFT)
+            seedProduct(2, status = CatalogProductStatus.DISCONTINUED)
+            seedProduct(3, deleted = true)
+            seedProduct(4)
+
+            assertEquals(listOf(4L), ids())
+        }
+
+        @Test
+        fun `상품 ID 순으로 돌려주고 재고 추적 여부를 담는다`() {
+            seedProduct(30, tracksInventory = true)
+            seedProduct(10, tracksInventory = false)
+            seedProduct(20, scope = stores(10), tracksInventory = true)
+
+            assertEquals(
+                listOf(
+                    SellableProductSummary(ProductId(10), false),
+                    SellableProductSummary(ProductId(20), true),
+                    SellableProductSummary(ProductId(30), true),
+                ),
+                listed(),
+            )
+        }
+
+        @Test
+        fun `상품이 없으면 빈 결과다`() {
+            assertEquals(emptyList(), ids())
+        }
+
+        @Test
+        fun `매장마다 자기 대상 상품만 고른다`() {
+            seedProduct(1, scope = stores(10))
+            seedProduct(2, scope = stores(20))
+            seedProduct(3, scope = stores(10, 20))
+
+            assertEquals(listOf(1L, 3L), ids(StoreId(10)))
+            assertEquals(listOf(2L, 3L), ids(StoreId(20)))
+            assertEquals(emptyList(), ids(StoreId(30)))
+        }
+
+        @Test
+        fun `상태, 판매 범위, 삭제 표시의 모든 조합에서 도메인 판단과 같다`() {
+            val statuses = CatalogProductStatus.entries
+            val scopes = listOf(StoreScope.All, stores(10, 20), stores(20), StoreScope.Limited(emptySet()))
+            val deletions = listOf(false, true)
+            var id = 0L
+            val expected = mutableListOf<Long>()
+            for (status in statuses) {
+                for (scope in scopes) {
+                    for (deleted in deletions) {
+                        id += 1
+                        seedProduct(id, scope = scope, status = status, deleted = deleted)
+                        if (status == CatalogProductStatus.ACTIVE && !deleted && scope.covers(store)) expected += id
+                    }
+                }
+            }
+
+            assertEquals(24, id)
+            assertEquals(expected, ids())
+            assertTrue(expected.isNotEmpty() && expected.size < id)
+        }
+
+        @Test
+        fun `많은 상품이 섞여 있어도 기대한 상품만 고른다`() {
+            val expected = mutableListOf<Long>()
+            for (i in 1L..300L) {
+                val scope =
+                    when (i % 3) {
+                        0L -> StoreScope.All
+                        1L -> stores(10, 20)
+                        else -> stores(20)
+                    }
+                val status = if (i % 7 == 0L) CatalogProductStatus.DRAFT else CatalogProductStatus.ACTIVE
+                seedProduct(i, scope = scope, status = status)
+                if (status == CatalogProductStatus.ACTIVE && scope.covers(store)) expected += i
+            }
+
+            assertEquals(expected, ids())
         }
     }
 }

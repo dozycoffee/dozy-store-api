@@ -2,6 +2,7 @@ package com.dozycoffee.store.catalogproduct.application.port.outbound
 
 import com.dozycoffee.store.catalogproduct.domain.CatalogProduct
 import com.dozycoffee.store.core.ProductId
+import com.dozycoffee.store.core.StoreId
 
 /**
  * Catalog 상품 복제본 저장소. 트랜잭션은 열지 않는다. application 서비스의 `inTransaction` 안에서 호출된다.
@@ -40,4 +41,10 @@ interface CatalogProductRepository {
      * 저장된 복제본이 없으면 거부한다.
      */
     suspend fun save(product: CatalogProduct)
+
+    /**
+     * 이 매장에서 판매할 수 있는 상품: `ACTIVE`이고 삭제되지 않았으며 판매 범위가 `ALL`이거나 이 매장이 대상인 상품을 상품 ID 순(본사 등록 순)으로 돌려준다.
+     * 읽기 전용이라 잠그지 않는다. 한정 판매 상품의 대상 매장 목록은 수천 개일 수 있어 읽지 않고, 이 매장이 대상인지만 쿼리 한 번으로 판단한다.
+     */
+    suspend fun findActiveProductsCoveringStore(storeId: StoreId): List<SellableProductSummary>
 }
